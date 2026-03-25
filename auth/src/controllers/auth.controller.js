@@ -1,157 +1,85 @@
-// import models
-import userModel from "../models/user.model.js";
-
-// import packages
-import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
-
-// import config
+import jwt from "jsonwebtoken";
+import userModel from "../models/user.model.js";
 import config from "../config/_config.js";
-
-// import broker
-import { publishToQueue } from "../broker/rabbit.js";
-
-// import redis
 import redis from "../db/redis.js";
-
-// import utils
+import { publishToQueue } from "../broker/rabbit.js";
 import { generateOTP } from "../utils/otp.js";
-import { handleRegistration, handleGoogleCallback } from "../utils/auth.util.js";
+import { uploadImage } from "../services/storage.service.js";
+import {
+    handleRegistration,
+    handleGoogleCallback,
+    generateAccessToken,
+    generateRefreshToken,
+    setTokenCookies,
+} from "../utils/auth.util.js";
 
-const registerController = async (req, res, next) => {
+// ─── Register ──────────────────────────────────────────────────────────────────
+
+export const registerController = async (req, res, next) => {
     try {
         const { email, password, firstName, lastName } = req.body;
-        const avatar = req.file;
+        const avatar = req.file; // optional
         await handleRegistration({ email, password, firstName, lastName, avatar });
-        res.status(200).json({ message: "OTP sent to your email. Please verify to complete registration." });
+        res.status(200).json({
+            message: "OTP sent to your email. Please verify to complete registration.",
+        });
     } catch (error) {
         next(error);
     }
 };
 
-const loginController = async (req, res) => {
-    const { email, password } = req.body;
+// ─── Verify Registration (OTP) ─────────────────────────────────────────────────
 
-    // check user exist or not
-    const user = await userModel.findOne({ email });
-    if (!user) {
-        return res.status(400).json({ message: "User not found. Please register" });
-    }
-
-    // check password valid or not
-    const isPasswordValid = await bcrypt.compare(password, user.password);
-    if (!isPasswordValid) {
-        return res.status(400).json({ message: "Invalid password. Please try again" });
-    }
-
-    // generate token with 2 days expiry
-    const token = jwt.sign({ id: user._id, firstName: user.fullName.firstName, lastName: user.fullName.lastName, avatar: user.avatar }, config.jwt_secret, {
-        expiresIn: "2d",
-    });
-
-    // set token in cookie
-    res.cookie("token", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "strict",
-        maxAge: 2 * 24 * 60 * 60 * 1000,
-    });
-
-    res.status(200).json({
-        message: "User logged in successfully",
-        user: {
-            _id: user._id,
-            email: user.email,
-            fullName: user.fullName,
-            avatar: user.avatar,
-        },
-    });
-};
-
-const googleAuthCallbackController = async (req, res, next) => {
-    try {
-        await handleGoogleCallback(res, req.user);
-    } catch (error) {
-        next(error);
-    }
-};
-
-
-const logoutController = async (req, res) => {
-    try {
-        const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
-
-        // check token exist or not
-        if (!token) {
-            return res.status(400).json({ message: "User Already Logged Out" });
-        }
-
-        // add token to blacklist
-        await redis.set(`bl_${token}`, token, "EX", 60 * 60 * 24 * 2);
-
-        // clear token from cookie
-        res.clearCookie("token");
-
-        res.status(200).json({ message: "Logged out successfully" });
-    } catch (error) {
-        console.error("Logout error:", error);
-        res.status(500).json({ message: "Internal server error" });
-    }
-};
-
-const verifyRegistrationController = async (req, res) => {
+export const verifyRegistrationController = async (req, res, next) => {
     try {
         const { email, otp } = req.body;
 
-        // check otp exist or not
+        // Retrieve from Redis
         const cachedData = await redis.get(`reg_${email}`);
         if (!cachedData) {
-            return res.status(400).json({ message: "OTP expired or invalid" });
+            return res.status(400).json({ message: "OTP expired or invalid. Please register again." });
         }
 
         const { userData, otp: cachedOtp } = JSON.parse(cachedData);
 
-        // check otp valid or not
         if (otp !== cachedOtp) {
-            return res.status(400).json({ message: "Invalid OTP" });
+            return res.status(400).json({ message: "Invalid OTP. Please try again." });
         }
 
-        // create user using the role stored in Redis (default to 'user' if missing for backward compatibility)
+        // Create user — password is already hashed (done in handleRegistration)
         const user = await userModel.create({
             email: userData.email,
             password: userData.password,
             fullName: {
                 firstName: userData.firstName,
-                lastName: userData.lastName
+                lastName: userData.lastName,
             },
             avatar: userData.avatar,
+            isVerified: true,
         });
 
-        // generate token with 2 days expiry
-        const token = jwt.sign({ id: user._id, firstName: user.fullName.firstName, lastName: user.fullName.lastName, avatar: user.avatar }, config.jwt_secret, {
-            expiresIn: "2d",
-        });
+        // Clean up Redis
+        await redis.del(`reg_${email}`);
 
-        // publish to queue to create user in database
+        // Publish events
         await publishToQueue("user_created", {
             id: user._id,
             email: user.email,
             fullName: user.fullName,
         });
-
-        // set token in cookie
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: true,
-            sameSite: "strict",
-            maxAge: 2 * 24 * 60 * 60 * 1000,
+        await publishToQueue("user.welcome", {
+            email: user.email,
+            firstName: user.fullName.firstName,
         });
 
-        // clear otp from redis
-        await redis.del(`reg_${email}`);
+        // Issue tokens
+        const accessToken = generateAccessToken(user._id);
+        const refreshToken = await generateRefreshToken(user._id);
+        setTokenCookies(res, accessToken, refreshToken);
 
         res.status(201).json({
-            message: "User registered successfully",
+            message: "Registration successful",
             user: {
                 _id: user._id,
                 email: user.email,
@@ -159,96 +87,287 @@ const verifyRegistrationController = async (req, res) => {
                 avatar: user.avatar,
             },
         });
-
     } catch (error) {
-        console.error("Verify Registration error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 };
 
-const forgotPasswordController = async (req, res) => {
-    try {
-        const { email } = req.body;
+// ─── Login ─────────────────────────────────────────────────────────────────────
 
-        // check user exist or not
+export const loginController = async (req, res, next) => {
+    try {
+        const { email, password } = req.body;
+
         const user = await userModel.findOne({ email });
         if (!user) {
-            return res.status(400).json({ message: "User not found" });
+            return res.status(400).json({ message: "Invalid email or password" }); // don't reveal which field is wrong
         }
 
-        // generate otp
+        // Block Google-only users from password login
+        if (user.googleId && !user.password) {
+            return res.status(400).json({
+                message: "This account uses Google Sign-In. Please log in with Google.",
+            });
+        }
+
+        const isPasswordValid = await bcrypt.compare(password, user.password);
+        if (!isPasswordValid) {
+            return res.status(400).json({ message: "Invalid email or password" });
+        }
+
+        if (!user.isVerified) {
+            return res.status(403).json({ message: "Please verify your email before logging in." });
+        }
+
+        // Update last login
+        user.lastLogin = new Date();
+        await user.save();
+
+        // Issue tokens
+        const accessToken = generateAccessToken(user._id);
+        const refreshToken = await generateRefreshToken(user._id);
+        setTokenCookies(res, accessToken, refreshToken);
+
+        res.status(200).json({
+            message: "Logged in successfully",
+            user: {
+                _id: user._id,
+                email: user.email,
+                fullName: user.fullName,
+                avatar: user.avatar,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Google OAuth Callback ─────────────────────────────────────────────────────
+
+export const googleAuthCallbackController = async (req, res, next) => {
+    try {
+        await handleGoogleCallback(res, req.user);
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Logout ────────────────────────────────────────────────────────────────────
+
+export const logoutController = async (req, res, next) => {
+    try {
+        const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
+
+        if (!token) {
+            return res.status(400).json({ message: "Already logged out" });
+        }
+
+        // Blacklist access token for its remaining TTL
+        try {
+            const decoded = jwt.verify(token, config.jwt_secret);
+            const ttl = decoded.exp - Math.floor(Date.now() / 1000);
+            if (ttl > 0) {
+                await redis.set(`bl_${token}`, "1", "EX", ttl);
+            }
+        } catch {
+            // Token already expired — no need to blacklist
+        }
+
+        // Delete refresh token from Redis
+        const refreshToken = req.cookies.refreshToken;
+        if (refreshToken) {
+            try {
+                const decoded = jwt.verify(refreshToken, config.jwt_refresh_secret);
+                await redis.del(`refresh_${decoded.id}`);
+            } catch {
+                // Refresh token expired or invalid — that's fine
+            }
+        }
+
+        res.clearCookie("token");
+        res.clearCookie("refreshToken");
+
+        res.status(200).json({ message: "Logged out successfully" });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Logout All Devices ────────────────────────────────────────────────────────
+
+export const logoutAllController = async (req, res, next) => {
+    try {
+        const userId = req.user._id;
+
+        // Delete refresh token from Redis — all new requests will fail auth
+        await redis.del(`refresh_${userId}`);
+
+        res.clearCookie("token");
+        res.clearCookie("refreshToken");
+
+        res.status(200).json({ message: "Logged out from all devices" });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Refresh Token ─────────────────────────────────────────────────────────────
+
+export const refreshTokenController = async (req, res, next) => {
+    try {
+        const refreshToken = req.cookies.refreshToken;
+        if (!refreshToken) {
+            return res.status(401).json({ message: "No refresh token provided" });
+        }
+
+        // Verify signature
+        let decoded;
+        try {
+            decoded = jwt.verify(refreshToken, config.jwt_refresh_secret);
+        } catch {
+            return res.status(401).json({ message: "Invalid or expired refresh token" });
+        }
+
+        // Check it still exists in Redis (not revoked)
+        const storedToken = await redis.get(`refresh_${decoded.id}`);
+        if (!storedToken || storedToken !== refreshToken) {
+            return res.status(401).json({ message: "Refresh token revoked. Please log in again." });
+        }
+
+        // Issue new access token
+        const newAccessToken = generateAccessToken(decoded.id);
+
+        res.cookie("token", newAccessToken, {
+            httpOnly: true,
+            secure: config.node_env === "production",
+            sameSite: "strict",
+            maxAge: 15 * 60 * 1000,
+        });
+
+        res.status(200).json({ message: "Token refreshed" });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Forgot Password ───────────────────────────────────────────────────────────
+
+export const forgotPasswordController = async (req, res, next) => {
+    try {
+        const { email } = req.body;
+        const user = await userModel.findOne({ email });
+
+        // Always return same message to prevent email enumeration
+        if (!user) {
+            return res.status(200).json({ message: "If this email is registered, an OTP has been sent." });
+        }
+
+        // Block Google-only users
+        if (user.googleId && !user.password) {
+            return res.status(400).json({
+                message: "This account uses Google Sign-In and has no password to reset.",
+            });
+        }
+
         const otp = generateOTP();
+        await redis.set(`reset_${email}`, otp, "EX", 60 * 10); // 10 min expiry
 
-        // store otp in redis with 10 minutes expiry
-        await redis.set(`reset_${email}`, otp, "EX", 60 * 10);
-
-        // publish to queue to send otp
         await publishToQueue("send_otp", {
             email,
             otp,
             firstName: user.fullName.firstName,
-            type: "forgot_password"
+            type: "forgot_password",
         });
 
-        res.status(200).json({ message: "OTP sent to your email" });
-
+        res.status(200).json({ message: "If this email is registered, an OTP has been sent." });
     } catch (error) {
-        console.error("Forgot Password error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 };
 
-const resetPasswordController = async (req, res) => {
+// ─── Reset Password ────────────────────────────────────────────────────────────
+
+export const resetPasswordController = async (req, res, next) => {
     try {
         const { email, otp, newPassword } = req.body;
 
-        // check otp exist or not
         const cachedOtp = await redis.get(`reset_${email}`);
         if (!cachedOtp) {
-            return res.status(400).json({ message: "OTP expired or invalid" });
+            return res.status(400).json({ message: "OTP expired or invalid. Please request a new one." });
         }
 
-        // compare otp
         if (otp !== cachedOtp) {
-            return res.status(400).json({ message: "Invalid OTP" });
+            return res.status(400).json({ message: "Invalid OTP." });
         }
 
-        // hash new password
-        const hashedPassword = await bcrypt.hash(newPassword, 10);
-
-        // update password
+        const hashedPassword = await bcrypt.hash(newPassword, 12);
         await userModel.findOneAndUpdate({ email }, { password: hashedPassword });
 
-        // clear otp from redis
         await redis.del(`reset_${email}`);
 
-        res.status(200).json({ message: "Password reset successfully" });
-
+        res.status(200).json({ message: "Password reset successfully. Please log in." });
     } catch (error) {
-        console.error("Reset Password error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 };
 
-const getCurrentUserController = async (req, res) => {
+// ─── Get Current User ──────────────────────────────────────────────────────────
+
+export const getCurrentUserController = async (req, res, next) => {
     try {
         res.status(200).json({
             message: "User fetched successfully",
-            user: req.user
+            user: req.user, // set by authMiddleware
         });
     } catch (error) {
-        console.error("Get Current User error:", error);
-        res.status(500).json({ message: "Internal server error" });
+        next(error);
     }
 };
 
-export {
-    registerController,
-    loginController,
-    googleAuthCallbackController,
-    logoutController,
-    verifyRegistrationController,
-    forgotPasswordController,
-    resetPasswordController,
-    getCurrentUserController
+// ─── Update Profile ────────────────────────────────────────────────────────────
+
+export const updateProfileController = async (req, res, next) => {
+    try {
+        const { firstName, lastName } = req.body;
+        const avatar = req.file;
+        const userId = req.user._id;
+
+        const updates = {};
+        if (firstName) updates["fullName.firstName"] = firstName;
+        if (lastName) updates["fullName.lastName"] = lastName;
+
+        if (avatar) {
+            const uploaded = await uploadImage(avatar.buffer, avatar.originalname);
+            updates.avatar = uploaded.url;
+        }
+
+        const user = await userModel.findByIdAndUpdate(userId, updates, { new: true });
+
+        res.status(200).json({
+            message: "Profile updated successfully",
+            user: {
+                _id: user._id,
+                email: user.email,
+                fullName: user.fullName,
+                avatar: user.avatar,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ─── Check Email ───────────────────────────────────────────────────────────────
+
+export const checkEmailController = async (req, res, next) => {
+    try {
+        const { email } = req.query;
+        if (!email) {
+            return res.status(400).json({ message: "Email is required" });
+        }
+        const exists = await userModel.exists({ email: email.toLowerCase() });
+        res.status(200).json({ exists: !!exists });
+    } catch (error) {
+        next(error);
+    }
 };

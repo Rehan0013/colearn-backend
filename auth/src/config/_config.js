@@ -12,7 +12,9 @@ const config = {
     imagekit_url_endpoint: process.env.IMAGEKIT_URL_ENDPOINT,
     google_client_id: process.env.CLIENT_ID,
     google_client_secret: process.env.CLIENT_SECRET,
-    session_secret: process.env.SESSION_SECRET,
+    jwt_refresh_secret: process.env.JWT_REFRESH_SECRET,
+    client_url: process.env.CLIENT_URL,
+    node_env: process.env.NODE_ENV,
 };
 
 export default config;
