@@ -120,7 +120,7 @@ export const handleGoogleCallback = async (res, googleUser) => {
         // Welcome notification
         await publishToQueue("user.welcome", {
             email: user.email,
-            firstName: user.fullName.firstName,
+            fullName: user.fullName,
         });
     } else if (!user.googleId) {
         // Existing email/password user — link their Google account

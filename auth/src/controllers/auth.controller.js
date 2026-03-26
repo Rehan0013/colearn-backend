@@ -70,7 +70,7 @@ export const verifyRegistrationController = async (req, res, next) => {
         });
         await publishToQueue("user.welcome", {
             email: user.email,
-            firstName: user.fullName.firstName,
+            fullName: user.fullName,
         });
 
         // Issue tokens

@@ -20,7 +20,7 @@ export const authMiddleware = async (req, res, next) => {
             return res.status(401).json({ message: "Session expired. Please log in again." });
         }
 
-        const decoded = jwt.verify(token, config.jwt_secret);
+        const decoded = jwt.verify(token, config.JWT_SECRET);
         req.user = { id: decoded.id };
         next();
     } catch {

@@ -2,7 +2,7 @@ import { subscribeToQueue } from "./rabbit.js";
 import sendEmail from "../utils/email.util.js";
 
 function startListener() {
-    subscribeToQueue("user_created", async (msg) => {
+    subscribeToQueue("user.welcome", async (msg) => {
         const { email, fullName: { firstName, lastName } } = msg;
 
         const template = `
