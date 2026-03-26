@@ -1,11 +1,9 @@
-import redis from "../../db/redis.js";
-import { publishToQueue } from "../../broker/rabbit.js";
+import Message from "../../models/message.model.js";
 
-const MAX_HISTORY = 50;       // messages kept in Redis per room
-const HISTORY_TTL = 60 * 60 * 24; // 24 hours
+const MAX_HISTORY = 50;       // messages kept per room
 
 /**
- * Redis key: chat:{roomId} → JSON array of last 50 messages
+ * MongoDB Model: Message
  *
  * Events:
  *   chat:message      → client sends a message
@@ -30,25 +28,24 @@ export const registerChatHandlers = (io, socket) => {
     });
 
     // ── Send message ─────────────────────────────────────────────────────────
-    socket.on("chat:message", async ({ roomId, content, userData }) => {
+    socket.on("chat:message", async ({ roomId, content, fileUrl, fileType, userData }) => {
         try {
-            if (!content?.trim()) return;
-            if (content.length > 500) {
+            if (!content?.trim() && !fileUrl) return;
+            if (content && content.length > 500) {
                 return socket.emit("chat:error", { message: "Message too long (max 500 characters)" });
             }
 
-            const message = {
-                id: `${Date.now()}-${userId}`,
+            const messageDoc = await Message.create({
                 roomId,
                 userId,
-                userData,       // { name, avatar } — sent from client to avoid DB call
-                content: content.trim(),
-                reactions: {},  // { emoji: [userId, ...] }
-                createdAt: new Date().toISOString(),
-            };
+                userData,
+                content: content?.trim() || "",
+                fileUrl,
+                fileType,
+            });
 
-            // Persist to Redis history
-            await appendToHistory(roomId, message);
+            // Clean up to plain object before broadcasting
+            const message = messageDoc.toJSON();
 
             // Broadcast to everyone in the room including sender
             io.to(roomId).emit("chat:receive", message);
@@ -63,38 +60,34 @@ export const registerChatHandlers = (io, socket) => {
             const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉"];
             if (!ALLOWED_EMOJIS.includes(emoji)) return;
 
-            const messages = await getChatHistory(roomId);
-            const message = messages.find((m) => m.id === messageId);
-            if (!message) return;
+            const messageDoc = await Message.findById(messageId);
+            if (!messageDoc) return;
 
-            // Toggle reaction — add if not there, remove if already reacted
-            if (!message.reactions[emoji]) {
-                message.reactions[emoji] = [];
+            // Handle reactions map
+            const reactions = messageDoc.reactions || {};
+            if (!reactions[emoji]) {
+                reactions[emoji] = [];
             }
 
-            const index = message.reactions[emoji].indexOf(userId);
+            const index = reactions[emoji].indexOf(userId);
             if (index === -1) {
-                message.reactions[emoji].push(userId);
+                reactions[emoji].push(userId);
             } else {
-                message.reactions[emoji].splice(index, 1);
-                if (message.reactions[emoji].length === 0) {
-                    delete message.reactions[emoji];
+                reactions[emoji].splice(index, 1);
+                if (reactions[emoji].length === 0) {
+                    delete reactions[emoji];
                 }
             }
 
-            // Save updated history back to Redis
-            await redis.set(
-                `chat:${roomId}`,
-                JSON.stringify(messages),
-                "EX",
-                HISTORY_TTL
-            );
+            // Must mark mixed type as modified
+            messageDoc.markModified('reactions');
+            await messageDoc.save();
 
             // Broadcast updated reactions to room
             io.to(roomId).emit("chat:react:update", {
                 roomId,
                 messageId,
-                reactions: message.reactions,
+                reactions: messageDoc.reactions,
             });
         } catch (error) {
             console.error("chat:react error:", error.message);
@@ -116,18 +109,19 @@ export const registerChatHandlers = (io, socket) => {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const getChatHistory = async (roomId) => {
-    const data = await redis.get(`chat:${roomId}`);
-    return data ? JSON.parse(data) : [];
-};
+    const docs = await Message.find({ roomId })
+        .sort({ createdAt: -1 }) // Sort descending to get latest
+        .limit(MAX_HISTORY)
+        .lean();
 
-const appendToHistory = async (roomId, message) => {
-    const messages = await getChatHistory(roomId);
-    messages.push(message);
-
-    // Keep only last MAX_HISTORY messages
-    if (messages.length > MAX_HISTORY) {
-        messages.splice(0, messages.length - MAX_HISTORY);
-    }
-
-    await redis.set(`chat:${roomId}`, JSON.stringify(messages), "EX", HISTORY_TTL);
+    // Reverse to return them in chronological order
+    const chronological = docs.reverse();
+    
+    return chronological.map((doc) => {
+        // Ensure consistent ID usage for the frontend
+        doc.id = doc._id.toString();
+        delete doc._id;
+        delete doc.__v;
+        return doc;
+    });
 };

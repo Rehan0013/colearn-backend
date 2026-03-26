@@ -3,8 +3,10 @@ import app from "./src/app.js";
 import { initSocket } from "./src/socket/index.js";
 import { connectRabbitMQ } from "./src/broker/rabbit.js";
 import config from "./src/config/_config.js";
+import connectDB from "./src/db/db.js";
 
 const startServer = async () => {
+    await connectDB();
     await connectRabbitMQ();
 
     // http.createServer wraps Express — required for Socket.io
