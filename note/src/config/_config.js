@@ -1,0 +1,13 @@
+import dotenv from "dotenv";
+dotenv.config();
+
+export default {
+    port: process.env.PORT || 5005,
+    mongo_uri: process.env.MONGO_URI,
+    redis_url: process.env.REDIS_URI,
+    rabbitmq_url: process.env.RABBITMQ_URI,
+    jwt_secret: process.env.JWT_SECRET,
+    client_url: process.env.CLIENT_URL,
+    max_versions: parseInt(process.env.MAX_VERSIONS) || 20,
+    node_env: process.env.NODE_ENV || "development",
+};
