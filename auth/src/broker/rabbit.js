@@ -1,6 +1,7 @@
 import amqp from "amqplib";
 
 import config from "../config/_config.js";
+import userModel from "../models/user.model.js";
 
 let channel, connection;
 
@@ -9,6 +10,32 @@ export async function connect() {
     channel = await connection.createChannel();
 
     console.log("Connected to RabbitMQ");
+    await setupConsumers();
+}
+
+async function setupConsumers() {
+    const queueName = "user.stats.updated";
+    await channel.assertQueue(queueName, { durable: true });
+    
+    channel.consume(queueName, async (msg) => {
+        if (msg !== null) {
+            try {
+                const data = JSON.parse(msg.content.toString());
+                const { userId, streak, totalStudyMinutes } = data;
+
+                await userModel.findByIdAndUpdate(userId, {
+                    streak,
+                    totalStudyMinutes,
+                    lastStreakDate: new Date()
+                });
+
+                channel.ack(msg);
+            } catch (error) {
+                console.error(`Error processing queue ${queueName}:`, error);
+                channel.nack(msg, false, false);
+            }
+        }
+    });
 }
 
 export async function publishToQueue(queueName, data) {

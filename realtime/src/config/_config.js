@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export default {
-    port: process.env.PORT || 5004,
+    port: process.env.PORT || 5003,
     redis_url: process.env.REDIS_URI,
     rabbitmq_url: process.env.RABBITMQ_URI,
     jwt_secret: process.env.JWT_SECRET,

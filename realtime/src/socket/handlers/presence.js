@@ -1,4 +1,5 @@
 import redis from "../../db/redis.js";
+import { publishToQueue } from "../../broker/rabbit.js";
 
 const PRESENCE_TTL = 60 * 60 * 2; // 2 hours
 
@@ -12,12 +13,13 @@ export const registerPresenceHandlers = (io, socket) => {
     const userId = socket.user.id;
 
     // ── User joins a room ────────────────────────────────────────────────────
-    socket.on("presence:join", async ({ roomId, userData }) => {
+    socket.on("presence:join", async ({ roomId, userData, subject }) => {
         try {
             socket.join(roomId);
             socket.currentRoom = roomId;
+            socket.currentSubject = subject ?? "General";
 
-            // Store user presence in Redis set
+            // Store user presence in Redis
             await redis.set(
                 `presence:${roomId}:${userId}`,
                 JSON.stringify({ userId, ...userData }),
@@ -36,6 +38,13 @@ export const registerPresenceHandlers = (io, socket) => {
                 roomId,
                 user: { userId, ...userData },
             });
+
+            // Notify session-service to start tracking
+            publishToQueue("session.started", {
+                userId,
+                roomId,
+                subject: socket.currentSubject,
+            }).catch(() => { });
         } catch (error) {
             console.error("presence:join error:", error.message);
         }
@@ -64,6 +73,9 @@ const handleLeave = async (io, socket, roomId, userId) => {
         const presentUsers = await getPresentUsers(roomId);
         io.to(roomId).emit("presence:update", { roomId, users: presentUsers });
         socket.to(roomId).emit("presence:left", { roomId, userId });
+
+        // Notify session-service to end tracking
+        publishToQueue("session.ended", { userId, roomId }).catch(() => { });
     } catch (error) {
         console.error("presence:leave error:", error.message);
     }

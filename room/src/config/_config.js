@@ -2,7 +2,7 @@ import { config as dotenvConfig } from "dotenv";
 dotenvConfig();
 
 const _config = {
-    port: process.env.PORT,
+    port: process.env.PORT || 5002,
     CLIENT_URL: process.env.CLIENT_URL,
     MONGO_URI: process.env.MONGO_URI,
     REDIS_URI: process.env.REDIS_URI,
