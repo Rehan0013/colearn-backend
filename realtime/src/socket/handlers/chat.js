@@ -1,127 +1,167 @@
 import Message from "../../models/message.model.js";
+import config from "../../config/_config.js";
+import { getPresentUsers } from "./presence.js";
+import { uploadFile } from "../../services/storage.service.js";
 
-const MAX_HISTORY = 50;       // messages kept per room
+const MAX_HISTORY = 50;
+const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉"];
+const ALLOWED_FILE_TYPES = ["image", "audio", "video"];
 
 /**
- * MongoDB Model: Message
- *
  * Events:
- *   chat:message      → client sends a message
- *   chat:receive      → server broadcasts message to room
- *   chat:history      → server sends recent messages to a joining user
- *   chat:react        → client adds a reaction to a message
- *   chat:react:update → server broadcasts updated reactions to room
- *   chat:typing       → client is typing
- *   chat:typing:update → server broadcasts who is typing
+ *   chat:message       → client sends a message (text or file)
+ *   chat:receive       → server broadcasts message to room
+ *   chat:history       → server sends paginated messages to joining user
+ *   chat:react         → client toggles a reaction on a message
+ *   chat:react:update  → server broadcasts updated reactions to room
+ *   chat:typing        → client is typing indicator
+ *   chat:typing:update → server broadcasts typing status to room
  */
 export const registerChatHandlers = (io, socket) => {
     const userId = socket.user.id;
 
-    // ── Get chat history (on room join) ──────────────────────────────────────
-    socket.on("chat:history", async ({ roomId }) => {
+    // ── Chat history (with cursor-based pagination) ───────────────────────────
+    socket.on("chat:history", async ({ roomId, before }) => {
         try {
-            const messages = await getChatHistory(roomId);
-            socket.emit("chat:history", { roomId, messages });
+            const filter = { roomId };
+
+            // Cursor-based: fetch messages before a given timestamp
+            if (before) {
+                filter.createdAt = { $lt: new Date(before) };
+            }
+
+            const messages = await Message.find(filter)
+                .sort({ createdAt: -1 })
+                .limit(MAX_HISTORY)
+                .lean();
+
+            const chronological = messages.reverse();
+
+            socket.emit("chat:history", {
+                roomId,
+                messages: chronological,
+                hasMore: messages.length === MAX_HISTORY,
+            });
         } catch (error) {
             console.error("chat:history error:", error.message);
         }
     });
 
-    // ── Send message ─────────────────────────────────────────────────────────
-    socket.on("chat:message", async ({ roomId, content, fileUrl, fileType, userData }) => {
+    // ── Send message ──────────────────────────────────────────────────────────
+    socket.on("chat:message", async ({ roomId, content, fileBuffer, fileName, fileUrl, fileType }) => {
         try {
-            if (!content?.trim() && !fileUrl) return;
+            // Must have either text content or a file/fileUrl
+            if (!content?.trim() && !fileUrl && !fileBuffer) return;
+
             if (content && content.length > 500) {
-                return socket.emit("chat:error", { message: "Message too long (max 500 characters)" });
+                return socket.emit("chat:error", {
+                    message: "Message too long (max 500 characters)",
+                });
             }
 
+            // If a file buffer is sent directly via socket, upload it first
+            if (fileBuffer && fileName) {
+                try {
+                    fileUrl = await uploadFile(fileBuffer, fileName);
+                    
+                    // Auto-detect file type if not explicitly provided
+                    if (!fileType) {
+                        const lower = fileName.toLowerCase();
+                        if (lower.match(/\.(jpeg|jpg|gif|png|webp|svg)$/)) fileType = "image";
+                        else if (lower.match(/\.(mp4|webm|avi|mov)$/)) fileType = "video";
+                        else if (lower.match(/\.(mp3|wav|ogg|m4a)$/)) fileType = "audio";
+                    }
+                } catch (error) {
+                    console.error("Socket file upload error:", error);
+                    return socket.emit("chat:error", { message: "Failed to upload file to ImageKit" });
+                }
+            }
+
+            // Validate file type
+            if (fileType && !ALLOWED_FILE_TYPES.includes(fileType)) {
+                return socket.emit("chat:error", { message: "Invalid file type" });
+            }
+
+            // Validate fileUrl is from ImageKit only
+            if (fileUrl && !fileUrl.startsWith(config.imagekit_url_endpoint)) {
+                return socket.emit("chat:error", { message: "Invalid file source" });
+            }
+
+            // Create message — userId from JWT (trusted), not client
             const messageDoc = await Message.create({
                 roomId,
                 userId,
-                userData,
                 content: content?.trim() || "",
-                fileUrl,
-                fileType,
+                fileUrl: fileUrl || null,
+                fileType: fileType || null,
             });
 
-            // Clean up to plain object before broadcasting
-            const message = messageDoc.toJSON();
+            // Attach sender info from presence cache (already in Redis)
+            const presentUsers = await getPresentUsers(roomId);
+            const senderData = presentUsers.find((u) => u.userId === userId) ?? null;
 
-            // Broadcast to everyone in the room including sender
+            const message = {
+                ...messageDoc.toJSON(),
+                userData: senderData,
+            };
+
+            // Broadcast to everyone in room including sender
             io.to(roomId).emit("chat:receive", message);
         } catch (error) {
             console.error("chat:message error:", error.message);
         }
     });
 
-    // ── React to a message ───────────────────────────────────────────────────
+    // ── React to a message ────────────────────────────────────────────────────
     socket.on("chat:react", async ({ roomId, messageId, emoji }) => {
         try {
-            const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉"];
             if (!ALLOWED_EMOJIS.includes(emoji)) return;
 
-            const messageDoc = await Message.findById(messageId);
-            if (!messageDoc) return;
+            const existing = await Message.findById(messageId).lean();
+            if (!existing) return;
 
-            // Handle reactions map
-            const reactions = messageDoc.reactions || {};
-            if (!reactions[emoji]) {
-                reactions[emoji] = [];
-            }
+            const alreadyReacted = existing.reactions?.[emoji]?.includes(userId);
 
-            const index = reactions[emoji].indexOf(userId);
-            if (index === -1) {
-                reactions[emoji].push(userId);
+            let updatedMessage;
+            if (alreadyReacted) {
+                updatedMessage = await Message.findByIdAndUpdate(
+                    messageId,
+                    { $pull: { [`reactions.${emoji}`]: userId } },
+                    { new: true }
+                );
             } else {
-                reactions[emoji].splice(index, 1);
-                if (reactions[emoji].length === 0) {
-                    delete reactions[emoji];
-                }
+                // $addToSet prevents duplicate reactions
+                updatedMessage = await Message.findByIdAndUpdate(
+                    messageId,
+                    { $addToSet: { [`reactions.${emoji}`]: userId } },
+                    { new: true }
+                );
             }
 
-            // Must mark mixed type as modified
-            messageDoc.markModified('reactions');
-            await messageDoc.save();
+            // Strip empty reaction arrays before broadcasting
+            const cleanedReactions = Object.fromEntries(
+                Object.entries(updatedMessage.reactions || {}).filter(
+                    ([, users]) => users.length > 0
+                )
+            );
 
-            // Broadcast updated reactions to room
             io.to(roomId).emit("chat:react:update", {
                 roomId,
                 messageId,
-                reactions: messageDoc.reactions,
+                reactions: cleanedReactions,
             });
         } catch (error) {
             console.error("chat:react error:", error.message);
         }
     });
 
-    // ── Typing indicator ─────────────────────────────────────────────────────
+    // ── Typing indicator (fire and forget — no DB/Redis) ─────────────────────
     socket.on("chat:typing", ({ roomId, userData, isTyping }) => {
-        // Broadcast to others only (not sender)
         socket.to(roomId).emit("chat:typing:update", {
             roomId,
             userId,
             userData,
             isTyping,
         });
-    });
-};
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-const getChatHistory = async (roomId) => {
-    const docs = await Message.find({ roomId })
-        .sort({ createdAt: -1 }) // Sort descending to get latest
-        .limit(MAX_HISTORY)
-        .lean();
-
-    // Reverse to return them in chronological order
-    const chronological = docs.reverse();
-    
-    return chronological.map((doc) => {
-        // Ensure consistent ID usage for the frontend
-        doc.id = doc._id.toString();
-        delete doc._id;
-        delete doc.__v;
-        return doc;
     });
 };

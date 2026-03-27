@@ -3,48 +3,53 @@ import mongoose from "mongoose";
 const messageSchema = new mongoose.Schema(
     {
         roomId: {
-            type: String,
+            type: mongoose.Schema.Types.ObjectId,
             required: true,
-            index: true,
+            index: true,    // fast lookup by room
         },
         userId: {
-            type: String, // String to avoid casting ObjectId if the user ID isn't a valid ObjectId yet, depending on auth
+            type: mongoose.Schema.Types.ObjectId,
             required: true,
-        },
-        userData: {
-            // Save DB lookups by caching basic user info
-            type: mongoose.Schema.Types.Mixed,
         },
         content: {
             type: String,
             default: "",
+            maxlength: 500,
         },
         fileUrl: {
             type: String,
+            default: null,
         },
         fileType: {
             type: String,
-            enum: ["image", "video", "audio", "document"],
+            enum: ["image", "audio", "video", null],
+            default: null,
         },
         reactions: {
-            // Store reactions as a map of emoji to arrays of userIds: { "👍": ["userId1", "userId2"] }
-            type: mongoose.Schema.Types.Mixed,
+            // { "👍": ["userId1", "userId2"], "❤️": ["userId3"] }
+            type: Map,
+            of: [String],
             default: {},
         },
-        // We handle id parsing via the built-in _id in Mongoose, but we can also add a virtual for `id`
     },
-    {
-        timestamps: true,
-    }
+    { timestamps: true }
 );
 
-// Virtual to transform `_id` to `id` consistently with frontend usage
-messageSchema.virtual("id").get(function () {
-    return this._id.toHexString();
-});
+// Compound index — fast paginated queries per room sorted by time
+messageSchema.index({ roomId: 1, createdAt: -1 });
 
+// Strip __v from all responses
 messageSchema.set("toJSON", {
-    virtuals: true,
+    transform: (doc, ret) => {
+        ret.id = ret._id.toString();
+        delete ret._id;
+        delete ret.__v;
+        // Convert Map to plain object for JSON serialization
+        if (ret.reactions instanceof Map) {
+            ret.reactions = Object.fromEntries(ret.reactions);
+        }
+        return ret;
+    },
 });
 
 const Message = mongoose.model("Message", messageSchema);
