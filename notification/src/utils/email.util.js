@@ -25,7 +25,7 @@ transporter.verify((error, success) => {
 const sendEmail = async (to, subject, text, html) => {
     try {
         const info = await transporter.sendMail({
-            from: `"Music Microservices" <${config.EMAIL_USER}>`, // sender address
+            from: `"Co-Learn" <${config.EMAIL_USER}>`, // sender address
             to, // list of receivers
             subject, // Subject line
             text, // plain text body

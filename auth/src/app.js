@@ -15,7 +15,12 @@ const app = express();
 
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(cors());
+app.use(cors(
+    {
+        origin: config.client_url,
+        credentials: true
+    }
+));
 app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
