@@ -242,6 +242,7 @@ export const refreshTokenController = async (req, res, next) => {
             secure: config.node_env === "production",
             sameSite: "strict",
             maxAge: 15 * 60 * 1000,
+            path: "/",
         });
 
         res.status(200).json({ message: "Token refreshed" });

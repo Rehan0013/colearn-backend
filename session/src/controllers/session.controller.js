@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import Session from "../models/session.model.js";
 import UserStats from "../models/userStats.model.js";
 import redis from "../db/redis.js";
@@ -118,7 +119,7 @@ export const getChartDataController = async (req, res, next) => {
         const dailyData = await Session.aggregate([
             {
                 $match: {
-                    userId: userId,
+                    userId: new mongoose.Types.ObjectId(userId),
                     isActive: false,
                     joinedAt: { $gte: startDate },
                 },
