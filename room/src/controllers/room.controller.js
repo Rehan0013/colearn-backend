@@ -118,10 +118,28 @@ export const joinRoomController = async (req, res, next) => {
             return res.status(404).json({ message: "Invalid invite code" });
         }
 
+        // Check if banned
+        const isBanned = room.bannedUsers?.some((id) => id.toString() === userId);
+        if (isBanned) {
+            return res.status(403).json({ message: "You have been banned from this room" });
+        }
+
         // Check already a member
-        const isMember = room.members.some((m) => m.user.toString() === userId);
+        const isMember = room.members.find((m) => m.user.toString() === userId);
+        const isOwner = room.createdBy.toString() === userId;
+
         if (isMember) {
-            return res.status(400).json({ message: "You are already a member of this room" });
+            // Already a member — if owner, ensure they are admin
+            if (isOwner && isMember.role !== "admin") {
+                // Demote current admin
+                room.members.forEach((m) => {
+                    if (m.role === "admin") m.role = "member";
+                });
+                isMember.role = "admin";
+                await room.save();
+                await redis.del(`room:${room._id}`);
+            }
+            return res.status(200).json({ message: "Already a member", room });
         }
 
         // Check capacity
@@ -129,11 +147,20 @@ export const joinRoomController = async (req, res, next) => {
             return res.status(400).json({ message: "Room is full" });
         }
 
-        room.members.push({ user: userId, role: "member" });
+        // If owner re-joins, they take back the admin role
+        if (isOwner) {
+            // Demote current admin
+            room.members.forEach((m) => {
+                if (m.role === "admin") m.role = "member";
+            });
+            room.members.push({ user: userId, role: "admin" });
+        } else {
+            room.members.push({ user: userId, role: "member" });
+        }
+
         room.lastActivity = new Date();
         await room.save();
 
-        // Invalidate room cache
         // Invalidate room and browse cache
         await redis.del(`room:${room._id}`);
         await redis.delByPattern("rooms:public:*");
@@ -158,16 +185,41 @@ export const joinPublicRoomController = async (req, res, next) => {
             return res.status(403).json({ message: "This is a private room. Use an invite code." });
         }
 
-        const isMember = room.members.some((m) => m.user.toString() === userId);
+        // Check if banned
+        const isBanned = room.bannedUsers?.some((id) => id.toString() === userId);
+        if (isBanned) {
+            return res.status(403).json({ message: "You have been banned from this room" });
+        }
+
+        const isMember = room.members.find((m) => m.user.toString() === userId);
+        const isOwner = room.createdBy.toString() === userId;
+
         if (isMember) {
-            return res.status(400).json({ message: "You are already a member of this room" });
+            // Already a member — if owner, ensure they are admin
+            if (isOwner && isMember.role !== "admin") {
+                room.members.forEach((m) => {
+                    if (m.role === "admin") m.role = "member";
+                });
+                isMember.role = "admin";
+                await room.save();
+                await redis.del(`room:${roomId}`);
+            }
+            return res.status(200).json({ message: "Already a member", room });
         }
 
         if (room.members.length >= room.maxMembers) {
             return res.status(400).json({ message: "Room is full" });
         }
 
-        room.members.push({ user: userId, role: "member" });
+        if (isOwner) {
+            room.members.forEach((m) => {
+                if (m.role === "admin") m.role = "member";
+            });
+            room.members.push({ user: userId, role: "admin" });
+        } else {
+            room.members.push({ user: userId, role: "member" });
+        }
+
         room.lastActivity = new Date();
         await room.save();
 
@@ -242,15 +294,30 @@ export const kickMemberController = async (req, res, next) => {
             return res.status(400).json({ message: "You cannot kick yourself. Use leave room instead." });
         }
 
+        // Can't kick the owner
+        if (room.createdBy.toString() === memberId) {
+            return res.status(403).json({ message: "The room owner cannot be kicked" });
+        }
+
         const isMember = room.members.some((m) => m.user.toString() === memberId);
         if (!isMember) {
             return res.status(404).json({ message: "Member not found in room" });
         }
 
         room.members = room.members.filter((m) => m.user.toString() !== memberId);
+        
+        // Add to banned list
+        if (!room.bannedUsers) room.bannedUsers = [];
+        if (!room.bannedUsers.includes(memberId)) {
+            room.bannedUsers.push(memberId);
+        }
+
         await room.save();
         await redis.del(`room:${roomId}`);
         await redis.delByPattern("rooms:public:*");
+
+        // Notify realtime-service of the kick
+        publishToQueue("room.member.kicked", { roomId, memberId }).catch(() => { });
 
         res.status(200).json({ message: "Member kicked successfully" });
     } catch (error) {

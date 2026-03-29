@@ -41,9 +41,11 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Start timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:start", async ({ roomId, mode = "focus" }) => {
         try {
-            const existing = await getPomodoroState(roomId);
+            // Check if user is admin (owner)
+            const room = await Room.findById(roomId);
+            if (!room || room.createdBy.toString() !== userId) return;
 
-            // Don't restart if already running
+            const existing = await getPomodoroState(roomId);
             if (existing?.isRunning) return;
 
             const duration = DURATIONS[mode] ?? DURATIONS.focus;
@@ -69,6 +71,9 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Pause timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:pause", async ({ roomId }) => {
         try {
+            const room = await Room.findById(roomId);
+            if (!room || room.createdBy.toString() !== userId) return;
+
             const state = await getPomodoroState(roomId);
             if (!state?.isRunning) return;
 
@@ -85,6 +90,9 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Reset timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:reset", async ({ roomId, mode = "focus" }) => {
         try {
+            const room = await Room.findById(roomId);
+            if (!room || room.createdBy.toString() !== userId) return;
+
             stopTicking(roomId);
 
             const state = {

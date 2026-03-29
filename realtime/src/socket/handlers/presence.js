@@ -57,6 +57,33 @@ export const registerPresenceHandlers = (io, socket) => {
         await handleLeave(io, socket, roomId, userId);
     });
 
+    // ── User kicks another user (Admin only) ────────────────────────────────
+    socket.on("presence:kick", async ({ roomId, memberId }) => {
+        try {
+            // Check if requester is in the room
+            const requesterPresence = await redis.get(`presence:${roomId}:${userId}`);
+            if (!requesterPresence) return;
+
+            const userData = JSON.parse(requesterPresence);
+            // Basic role check if available in presence data
+            if (userData.role !== "admin") {
+                // Could notify the requester of lack of permissions
+                return;
+            }
+
+            // Emit to the specific user in the room
+            io.to(roomId).emit("room:kicked", {
+                roomId,
+                userId: memberId,
+                message: "You have been kicked from this room."
+            });
+
+            console.log(`Socket event handled: presence:kick | roomId: ${roomId} | memberId: ${memberId}`);
+        } catch (error) {
+            console.error("presence:kick error:", error.message);
+        }
+    });
+
     // ── Cleanup on disconnect ────────────────────────────────────────────────
     socket.on("disconnect", async () => {
         if (socket.currentRoom) {

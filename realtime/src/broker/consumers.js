@@ -35,17 +35,27 @@ export const startConsumers = async (io) => {
             }
         });
 
-        // ── session.ended ──────────────────────────────────────────────────────
-        // Can be used to sync UI states if needed, though mostly for backend tracking.
-        await channel.assertQueue("realtime.session.ended", { durable: true });
-        channel.consume("realtime.session.ended", async (msg) => {
+        // ── room.member.kicked ──────────────────────────────────────────────────
+        // Published by room-service when a member is kicked and banned.
+        await channel.assertQueue("room.member.kicked", { durable: true });
+        channel.consume("room.member.kicked", async (msg) => {
             if (!msg) return;
             try {
-                const { userId, roomId } = JSON.parse(msg.content.toString());
-                // Could emit to specific user if needed
-                // io.to(`user:${userId}`).emit("session:ended", { roomId });
+                const { roomId, memberId } = JSON.parse(msg.content.toString());
+
+                // 1. Notify the kicked user specifically
+                io.to(roomId).emit("room:kicked", {
+                    roomId,
+                    userId: memberId,
+                    message: "You have been kicked and banned from this room."
+                });
+
+                // 2. Update presence list for others
+                // The frontend should handle the 'room:kicked' event and clear cache
+                console.log(`Event handled: room.member.kicked | roomId: ${roomId} | memberId: ${memberId}`);
                 channel.ack(msg);
             } catch (error) {
+                console.error("room.member.kicked consumer error:", error.message);
                 channel.nack(msg, false, false);
             }
         });
