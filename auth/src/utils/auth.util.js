@@ -12,8 +12,16 @@ import { uploadImage } from "../services/storage.service.js";
 /**
  * Generate a short-lived access token (15 min)
  */
-export const generateAccessToken = (userId) => {
-    return jwt.sign({ id: userId }, config.jwt_secret, { expiresIn: "15m" });
+export const generateAccessToken = (user) => {
+    return jwt.sign(
+        {
+            id: user._id,
+            email: user.email,
+            fullName: user.fullName
+        },
+        config.jwt_secret,
+        { expiresIn: "15m" }
+    );
 };
 
 /**

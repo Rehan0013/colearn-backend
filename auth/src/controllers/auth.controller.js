@@ -74,7 +74,7 @@ export const verifyRegistrationController = async (req, res, next) => {
         });
 
         // Issue tokens
-        const accessToken = generateAccessToken(user._id);
+        const accessToken = generateAccessToken(user);
         const refreshToken = await generateRefreshToken(user._id);
         setTokenCookies(res, accessToken, refreshToken);
 
@@ -124,7 +124,7 @@ export const loginController = async (req, res, next) => {
         await user.save();
 
         // Issue tokens
-        const accessToken = generateAccessToken(user._id);
+        const accessToken = generateAccessToken(user);
         const refreshToken = await generateRefreshToken(user._id);
         setTokenCookies(res, accessToken, refreshToken);
 
@@ -235,7 +235,8 @@ export const refreshTokenController = async (req, res, next) => {
         }
 
         // Issue new access token
-        const newAccessToken = generateAccessToken(decoded.id);
+        const user = await userModel.findById(decoded.id);
+        const newAccessToken = generateAccessToken(user);
 
         res.cookie("token", newAccessToken, {
             httpOnly: true,

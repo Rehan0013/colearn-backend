@@ -25,7 +25,7 @@ export const createRoomController = async (req, res, next) => {
         });
 
         // Invalidate browse cache
-        await redis.del("rooms:public");
+        await redis.delByPattern("rooms:public:*");
 
         res.status(201).json({ message: "Room created successfully", room });
     } catch (error) {
@@ -134,7 +134,9 @@ export const joinRoomController = async (req, res, next) => {
         await room.save();
 
         // Invalidate room cache
+        // Invalidate room and browse cache
         await redis.del(`room:${room._id}`);
+        await redis.delByPattern("rooms:public:*");
 
         res.status(200).json({ message: "Joined room successfully", room });
     } catch (error) {
@@ -170,6 +172,7 @@ export const joinPublicRoomController = async (req, res, next) => {
         await room.save();
 
         await redis.del(`room:${roomId}`);
+        await redis.delByPattern("rooms:public:*");
 
         res.status(200).json({ message: "Joined room successfully", room });
     } catch (error) {
@@ -210,6 +213,7 @@ export const leaveRoomController = async (req, res, next) => {
 
         await room.save();
         await redis.del(`room:${roomId}`);
+        await redis.delByPattern("rooms:public:*");
 
         res.status(200).json({ message: "Left room successfully" });
     } catch (error) {
@@ -246,6 +250,7 @@ export const kickMemberController = async (req, res, next) => {
         room.members = room.members.filter((m) => m.user.toString() !== memberId);
         await room.save();
         await redis.del(`room:${roomId}`);
+        await redis.delByPattern("rooms:public:*");
 
         res.status(200).json({ message: "Member kicked successfully" });
     } catch (error) {
@@ -278,7 +283,7 @@ export const updateRoomController = async (req, res, next) => {
 
         await room.save();
         await redis.del(`room:${roomId}`);
-        await redis.del("rooms:public");
+        await redis.delByPattern("rooms:public:*");
 
         res.status(200).json({ message: "Room updated successfully", room });
     } catch (error) {
@@ -304,7 +309,9 @@ export const deleteRoomController = async (req, res, next) => {
         await room.save();
 
         await redis.del(`room:${roomId}`);
-        await redis.del("rooms:public");
+        await redis.delByPattern("rooms:public:*");
+
+        await Room.findByIdAndUpdate(roomId, { isActive: false });
 
         // Notify other services
         publishToQueue("room.deleted", { roomId }).catch(() => { });

@@ -25,7 +25,11 @@ export const socketAuthMiddleware = async (socket, next) => {
         }
 
         const decoded = jwt.verify(token, config.jwt_secret);
-        socket.user = { id: decoded.id };
+        socket.user = {
+            id: decoded.id,
+            email: decoded.email,
+            fullName: decoded.fullName
+        };
         next();
     } catch {
         next(new Error("Invalid or expired token"));

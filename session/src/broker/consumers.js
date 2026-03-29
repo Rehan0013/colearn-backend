@@ -13,8 +13,8 @@ export const startConsumers = async () => {
         channel.consume("session.started", async (msg) => {
             if (!msg) return;
             try {
-                const { userId, roomId, subject } = JSON.parse(msg.content.toString());
-                await startSession({ userId, roomId, subject });
+                const { userId, roomId, subject, userEmail, userFullName } = JSON.parse(msg.content.toString());
+                await startSession({ userId, roomId, subject, userEmail, userFullName });
                 console.log(`Session started — user: ${userId}, room: ${roomId}`);
                 channel.ack(msg);
             } catch (error) {

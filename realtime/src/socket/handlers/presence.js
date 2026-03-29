@@ -44,6 +44,8 @@ export const registerPresenceHandlers = (io, socket) => {
                 userId,
                 roomId,
                 subject: socket.currentSubject,
+                userEmail: socket.user.email,
+                userFullName: socket.user.fullName,
             }).catch(() => { });
         } catch (error) {
             console.error("presence:join error:", error.message);

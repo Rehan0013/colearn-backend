@@ -35,7 +35,12 @@ export const registerChatHandlers = (io, socket) => {
                 .limit(MAX_HISTORY)
                 .lean();
 
-            const chronological = messages.reverse();
+            const chronological = messages.reverse().map(m => {
+                const doc = { ...m, id: m._id.toString() };
+                delete doc._id;
+                delete doc.__v;
+                return doc;
+            });
 
             socket.emit("chat:history", {
                 roomId,
@@ -87,26 +92,23 @@ export const registerChatHandlers = (io, socket) => {
                 return socket.emit("chat:error", { message: "Invalid file source" });
             }
 
-            // Create message — userId from JWT (trusted), not client
+            // Fetch sender info from presence cache (if available)
+            const presentUsers = await getPresentUsers(roomId);
+            const senderInfo = presentUsers.find((u) => u.userId === userId);
+            const userData = senderInfo ? { name: senderInfo.name, avatar: senderInfo.avatar } : { name: "Unknown", avatar: null };
+
+            // Create message with persisted userData
             const messageDoc = await Message.create({
                 roomId,
                 userId,
                 content: content?.trim() || "",
                 fileUrl: fileUrl || null,
                 fileType: fileType || null,
+                userData,
             });
 
-            // Attach sender info from presence cache (already in Redis)
-            const presentUsers = await getPresentUsers(roomId);
-            const senderData = presentUsers.find((u) => u.userId === userId) ?? null;
-
-            const message = {
-                ...messageDoc.toJSON(),
-                userData: senderData,
-            };
-
             // Broadcast to everyone in room including sender
-            io.to(roomId).emit("chat:receive", message);
+            io.to(roomId).emit("chat:receive", messageDoc.toJSON());
         } catch (error) {
             console.error("chat:message error:", error.message);
         }
@@ -120,22 +122,28 @@ export const registerChatHandlers = (io, socket) => {
             const existing = await Message.findById(messageId).lean();
             if (!existing) return;
 
-            const alreadyReacted = existing.reactions?.[emoji]?.includes(userId);
+            // Check if user already has THIS specific emoji
+            const alreadyHasThisEmoji = existing.reactions?.[emoji]?.includes(userId);
+
+            // Step 1: Remove userId from ALL reaction arrays (Exclusive Reaction)
+            const pullUpdate = {};
+            ALLOWED_EMOJIS.forEach(e => {
+                pullUpdate[`reactions.${e}`] = userId;
+            });
+
+            await Message.findByIdAndUpdate(messageId, { $pull: pullUpdate });
 
             let updatedMessage;
-            if (alreadyReacted) {
-                updatedMessage = await Message.findByIdAndUpdate(
-                    messageId,
-                    { $pull: { [`reactions.${emoji}`]: userId } },
-                    { new: true }
-                );
+            if (alreadyHasThisEmoji) {
+                // It was a toggle-off (already removed by $pull above)
+                updatedMessage = await Message.findById(messageId).lean();
             } else {
-                // $addToSet prevents duplicate reactions
+                // It's a new reaction or changing from a different emoji
                 updatedMessage = await Message.findByIdAndUpdate(
                     messageId,
                     { $addToSet: { [`reactions.${emoji}`]: userId } },
                     { new: true }
-                );
+                ).lean();
             }
 
             // Strip empty reaction arrays before broadcasting

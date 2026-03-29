@@ -31,6 +31,10 @@ const messageSchema = new mongoose.Schema(
             of: [String],
             default: {},
         },
+        userData: {
+            name: { type: String, default: "Unknown" },
+            avatar: { type: String, default: null },
+        },
     },
     { timestamps: true }
 );

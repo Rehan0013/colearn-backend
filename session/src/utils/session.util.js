@@ -11,7 +11,7 @@ const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
 
 // ── Start Session ──────────────────────────────────────────────────────────────
 
-export const startSession = async ({ userId, roomId, subject }) => {
+export const startSession = async ({ userId, roomId, subject, userEmail, userFullName }) => {
     // Check if session already active for this user+room (double join guard)
     const existing = await redis.get(SESSION_KEY(userId, roomId));
     if (existing) return;
@@ -21,7 +21,12 @@ export const startSession = async ({ userId, roomId, subject }) => {
     // Store joinedAt in Redis — fast lookup on session end
     await redis.set(
         SESSION_KEY(userId, roomId),
-        JSON.stringify({ joinedAt: joinedAt.toISOString(), subject }),
+        JSON.stringify({
+            joinedAt: joinedAt.toISOString(),
+            subject,
+            userEmail,
+            userFullName,
+        }),
         "EX",
         60 * 60 * 12 // 12 hour safety expiry
     );
@@ -42,7 +47,7 @@ export const endSession = async ({ userId, roomId }) => {
     const cached = await redis.get(SESSION_KEY(userId, roomId));
     if (!cached) return; // no active session found
 
-    const { joinedAt, subject } = JSON.parse(cached);
+    const { joinedAt, subject, userEmail, userFullName } = JSON.parse(cached);
     const leftAt = new Date();
     const durationMinutes = Math.round(
         (leftAt - new Date(joinedAt)) / 1000 / 60
@@ -65,12 +70,12 @@ export const endSession = async ({ userId, roomId }) => {
     );
 
     // Update aggregated user stats
-    await updateUserStats({ userId, durationMinutes });
+    await updateUserStats({ userId, durationMinutes, userEmail, userFullName });
 };
 
 // ── Update UserStats + Streak ──────────────────────────────────────────────────
 
-const updateUserStats = async ({ userId, durationMinutes }) => {
+const updateUserStats = async ({ userId, durationMinutes, userEmail, userFullName }) => {
     const todayStr = getTodayString();
 
     let stats = await UserStats.findOne({ userId });
@@ -83,7 +88,9 @@ const updateUserStats = async ({ userId, durationMinutes }) => {
             lastStudyDate: todayStr,
             longestStreak: 1,
         });
-        await checkStreakMilestone(userId, stats.streak);
+        await checkStreakMilestone(userId, stats.streak, userEmail, userFullName);
+        await redis.del(`stats:${userId}`);
+        await redis.delByPattern(`charts:${userId}:*`);
         return;
     }
 
@@ -110,8 +117,12 @@ const updateUserStats = async ({ userId, durationMinutes }) => {
 
     await stats.save();
 
+    // Invalidate stats and charts cache
+    await redis.del(`stats:${userId}`);
+    await redis.delByPattern(`charts:${userId}:*`);
+
     // Publish milestone notification if needed
-    await checkStreakMilestone(userId, stats.streak);
+    await checkStreakMilestone(userId, stats.streak, userEmail, userFullName);
 
     // Sync updated stats to auth service
     publishToQueue("user.stats.updated", {
@@ -123,9 +134,9 @@ const updateUserStats = async ({ userId, durationMinutes }) => {
 
 // ── Streak milestone publisher ────────────────────────────────────────────────
 
-const checkStreakMilestone = async (userId, streak) => {
+const checkStreakMilestone = async (userId, streak, email, fullName) => {
     if (STREAK_MILESTONES.includes(streak)) {
-        publishToQueue("streak.achieved", { userId, streak }).catch(() => { });
+        publishToQueue("streak.achieved", { userId, streak, email, fullName }).catch(() => { });
     }
 };
 
