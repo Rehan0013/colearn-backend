@@ -11,6 +11,7 @@ import {
     deleteRoomController,
     getMyRoomsController,
     regenerateInviteCodeController,
+    getUserAllRoomsController
 } from "../controllers/room.controller.js";
 
 import { authMiddleware } from "../middlewares/auth.middleware.js";
@@ -36,6 +37,8 @@ router.get("/my-rooms", getMyRoomsController);                                  
 router.get("/:roomId", roomIdValidation, getRoomByIdController);                              // get room details
 router.patch("/:roomId", updateRoomValidation, updateRoomController);                         // update room
 router.delete("/:roomId", roomIdValidation, deleteRoomController);                            // delete room
+
+router.get("/user/:userId", getUserAllRoomsController);                                      // get user all rooms
 
 router.post("/join", joinRoomValidation, joinRoomController);                                 // join via invite code
 router.post("/:roomId/join", roomIdValidation, joinPublicRoomController);                     // join public room

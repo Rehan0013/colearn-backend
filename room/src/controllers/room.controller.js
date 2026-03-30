@@ -471,3 +471,17 @@ export const regenerateInviteCodeController = async (req, res, next) => {
         next(error);
     }
 };
+
+export const getUserAllRoomsController = async (req, res, next) => {
+    try {
+        const userId = req.user.id;
+
+        const rooms = await Room.find({ "createdBy": userId })
+            .populate("createdBy", "fullName")
+            .sort({ lastActivity: -1 });
+
+        res.status(200).json({ message: "Rooms fetched successfully", rooms });
+    } catch (error) {
+        next(error);
+    }
+}
