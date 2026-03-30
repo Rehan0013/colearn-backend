@@ -46,10 +46,10 @@ export const getPublicRoomsController = async (req, res, next) => {
             return res.status(200).json(JSON.parse(cached));
         }
 
-        const filter = { 
-            isPrivate: false, 
-            isActive: true, 
-            expiresAt: { $gt: new Date() } 
+        const filter = {
+            isPrivate: false,
+            isActive: true,
+            expiresAt: { $gt: new Date() }
         };
         if (subject) filter.subject = subject;
 
@@ -280,12 +280,12 @@ export const leaveRoomController = async (req, res, next) => {
         if (isAdmin && room.members.length > 0) {
             const nextAdmin = room.members[0];
             nextAdmin.role = "admin"; // promote oldest remaining member
-            
+
             // Notify about promotion for real-time UI updates
             publishToQueue("room.member.promoted", {
                 roomId,
                 newAdminId: nextAdmin.user.toString()
-            }).catch(() => {});
+            }).catch(() => { });
         }
 
         // If no members left, deactivate room
@@ -345,7 +345,7 @@ export const kickMemberController = async (req, res, next) => {
                 return String(mId) !== String(memberId);
             });
         }
-        
+
         // 2. Add to banned list (always, even if not in DB members list)
         if (!room.bannedUsers) room.bannedUsers = [];
         const isAlreadyBanned = room.bannedUsers.some(b => String(b) === String(memberId));
@@ -360,7 +360,7 @@ export const kickMemberController = async (req, res, next) => {
         // 3. Notify realtime-service of the kick (triggers socket:kicked and presence cleanup)
         publishToQueue("room.member.kicked", { roomId, memberId }).catch(() => { });
 
-        res.status(200).json({ 
+        res.status(200).json({
             message: "Member kicked successfully",
             removedFromMembers: isMember
         });
@@ -437,7 +437,7 @@ export const getMyRoomsController = async (req, res, next) => {
     try {
         const userId = req.user.id;
 
-        const rooms = await Room.find({ "members.user": userId })
+        const rooms = await Room.find({ "members.user": userId, isActive: true })
             .populate("createdBy", "fullName")
             .sort({ lastActivity: -1 });
 
