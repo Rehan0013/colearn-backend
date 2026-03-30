@@ -1,5 +1,6 @@
 import redis from "../../db/redis.js";
 import { publishToQueue } from "../../broker/rabbit.js";
+import Room from "../../models/room.model.js";
 
 const PRESENCE_TTL = 60 * 60 * 2; // 2 hours
 
@@ -15,6 +16,22 @@ export const registerPresenceHandlers = (io, socket) => {
     // ── User joins a room ────────────────────────────────────────────────────
     socket.on("presence:join", async ({ roomId, userData, subject }) => {
         try {
+            // 0. Security Guard: Check if user is banned before adding presence
+            const room = await Room.findById(roomId);
+            if (room) {
+                const isBanned = room.bannedUsers?.some((id) => String(id) === String(userId));
+                if (isBanned) {
+                    console.log(`Presence denied: User ${userId} is banned from room ${roomId}`);
+                    socket.emit("room:kicked", { 
+                        roomId, 
+                        userId, 
+                        message: "You are banned from this room." 
+                    });
+                    socket.leave(roomId);
+                    return;
+                }
+            }
+
             socket.join(roomId);
             socket.currentRoom = roomId;
             socket.currentSubject = subject ?? "General";

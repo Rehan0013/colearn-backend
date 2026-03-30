@@ -8,14 +8,14 @@ import connectDB from "./src/db/db.js";
 
 const startServer = async () => {
     await connectDB();
-    await connectRabbitMQ();
-
     // http.createServer wraps Express — required for Socket.io
     const httpServer = http.createServer(app);
 
     // Attach Socket.io to the same HTTP server
     const io = initSocket(httpServer);
-    await startConsumers(io);
+
+    // connect to rabbitmq and start consumers
+    await connectRabbitMQ(() => startConsumers(io));
 
     httpServer.listen(config.port, () => {
         console.log(`Realtime service running on port ${config.port}`);

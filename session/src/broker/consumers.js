@@ -1,12 +1,14 @@
-import amqp from "amqplib";
-import config from "../config/_config.js";
+import { getChannel } from "./rabbit.js";
 import { startSession, endSession } from "../utils/session.util.js";
 
 export const startConsumers = async () => {
-    try {
-        const connection = await amqp.connect(config.rabbitmq_url);
-        const channel = await connection.createChannel();
+    const channel = getChannel();
+    if (!channel) {
+        console.error("Session service: Cannot start consumers, no RabbitMQ channel available");
+        return;
+    }
 
+    try {
         // ── session.started ────────────────────────────────────────────────────
         // Published by realtime-service on presence:join
         await channel.assertQueue("session.started", { durable: true });
@@ -39,8 +41,8 @@ export const startConsumers = async () => {
             }
         });
 
-        console.log("Session service: consumers started");
+        console.log("Session service: consumers registered successfully");
     } catch (error) {
-        console.error("Session service: consumer start failed:", error.message);
+        console.error("Session service: consumer registration failed:", error.message);
     }
 };

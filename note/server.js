@@ -6,8 +6,7 @@ import config from "./src/config/_config.js";
 
 const startServer = async () => {
     await connectDB();
-    await connectRabbitMQ();
-    await startConsumers();
+    await connectRabbitMQ(startConsumers);
 
     app.listen(config.port, () => {
         console.log(`Notes service running on port ${config.port}`);

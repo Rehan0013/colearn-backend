@@ -1,12 +1,14 @@
-import amqp from "amqplib";
-import config from "../config/_config.js";
+import { getChannel } from "./rabbit.js";
 import { saveNoteVersion } from "../utils/notes.util.js";
 
 export const startConsumers = async () => {
-    try {
-        const connection = await amqp.connect(config.rabbitmq_url);
-        const channel = await connection.createChannel();
+    const channel = getChannel();
+    if (!channel) {
+        console.error("Notes service: Cannot start consumers, no RabbitMQ channel available");
+        return;
+    }
 
+    try {
         // ── notes.save ─────────────────────────────────────────────────────────
         // Published by realtime-service after 2s debounce on note changes
         await channel.assertQueue("notes.save", { durable: true });
@@ -26,8 +28,8 @@ export const startConsumers = async () => {
             }
         });
 
-        console.log("Notes service: consumers started");
+        console.log("Notes service: consumers registered successfully");
     } catch (error) {
-        console.error("Notes service: consumer start failed:", error.message);
+        console.error("Notes service: consumer registration failed:", error.message);
     }
 };

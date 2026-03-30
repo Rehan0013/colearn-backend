@@ -1,5 +1,6 @@
 import Message from "../../models/message.model.js";
 import config from "../../config/_config.js";
+import redis from "../../db/redis.js";
 import { getPresentUsers } from "./presence.js";
 import { uploadFile } from "../../services/storage.service.js";
 
@@ -55,6 +56,10 @@ export const registerChatHandlers = (io, socket) => {
     // ── Send message ──────────────────────────────────────────────────────────
     socket.on("chat:message", async ({ roomId, content, fileBuffer, fileName, fileUrl, fileType }) => {
         try {
+            // Check if user is in presence list (membership check)
+            const isPresent = await redis.exists(`presence:${roomId}:${userId}`);
+            if (!isPresent) return;
+
             // Must have either text content or a file/fileUrl
             if (!content?.trim() && !fileUrl && !fileBuffer) return;
 
@@ -117,6 +122,10 @@ export const registerChatHandlers = (io, socket) => {
     // ── React to a message ────────────────────────────────────────────────────
     socket.on("chat:react", async ({ roomId, messageId, emoji }) => {
         try {
+            // Check membership
+            const isPresent = await redis.exists(`presence:${roomId}:${userId}`);
+            if (!isPresent) return;
+
             if (!ALLOWED_EMOJIS.includes(emoji)) return;
 
             const existing = await Message.findById(messageId).lean();
@@ -164,7 +173,11 @@ export const registerChatHandlers = (io, socket) => {
     });
 
     // ── Typing indicator (fire and forget — no DB/Redis) ─────────────────────
-    socket.on("chat:typing", ({ roomId, userData, isTyping }) => {
+    socket.on("chat:typing", async ({ roomId, userData, isTyping }) => {
+        // Membership check
+        const isPresent = await redis.exists(`presence:${roomId}:${userId}`);
+        if (!isPresent) return;
+
         socket.to(roomId).emit("chat:typing:update", {
             roomId,
             userId,

@@ -39,6 +39,10 @@ export const registerNotesHandlers = (io, socket) => {
     // ── User updates note ────────────────────────────────────────────────────
     socket.on("notes:update", async ({ roomId, content, userData }) => {
         try {
+            // Check membership
+            const isPresent = await redis.exists(`presence:${roomId}:${userId}`);
+            if (!isPresent) return;
+
             if (typeof content !== "string") return;
             if (content.length > 50000) {
                 return socket.emit("notes:error", { message: "Note exceeds maximum size (50,000 characters)" });
@@ -63,7 +67,11 @@ export const registerNotesHandlers = (io, socket) => {
     });
 
     // ── Cursor position (shows where each user is editing) ───────────────────
-    socket.on("notes:cursor", ({ roomId, position, userData }) => {
+    socket.on("notes:cursor", async ({ roomId, position, userData }) => {
+        // Membership check
+        const isPresent = await redis.exists(`presence:${roomId}:${userId}`);
+        if (!isPresent) return;
+
         socket.to(roomId).emit("notes:cursor:update", {
             roomId,
             userId,

@@ -46,7 +46,11 @@ export const getPublicRoomsController = async (req, res, next) => {
             return res.status(200).json(JSON.parse(cached));
         }
 
-        const filter = { isPrivate: false };
+        const filter = { 
+            isPrivate: false, 
+            isActive: true, 
+            expiresAt: { $gt: new Date() } 
+        };
         if (subject) filter.subject = subject;
 
         const rooms = await Room.find(filter)
@@ -81,7 +85,7 @@ export const getPublicRoomsController = async (req, res, next) => {
 export const getRoomByIdController = async (req, res, next) => {
     try {
         const { roomId } = req.params;
-        const cacheKey = `room:${roomId}`;
+        const cacheKey = `room:v4:${roomId}`;
 
         const cached = await redis.get(cacheKey);
         if (cached) {
@@ -96,7 +100,16 @@ export const getRoomByIdController = async (req, res, next) => {
             return res.status(404).json({ message: "Room not found" });
         }
 
+        // Check if user is banned
+        const userId = req.user.id;
+        const isBanned = room.bannedUsers?.some((id) => String(id) === String(userId));
+        if (isBanned) {
+            return res.status(403).json({ message: "You are banned from this room" });
+        }
+
         const response = { message: "Room fetched successfully", room };
+        // Don't cache for now if we want real-time ban enforcement per user, 
+        // OR we can cache if we invalidate on kick (which we already do).
         await redis.set(cacheKey, JSON.stringify(response), "EX", CACHE_TTL);
 
         res.status(200).json(response);
@@ -119,14 +132,19 @@ export const joinRoomController = async (req, res, next) => {
         }
 
         // Check if banned
-        const isBanned = room.bannedUsers?.some((id) => id.toString() === userId);
+        const isBanned = room.bannedUsers?.some((id) => String(id) === String(userId));
         if (isBanned) {
             return res.status(403).json({ message: "You have been banned from this room" });
         }
 
+        // Check if deactivated (only owner can join deactivated rooms)
+        if (!room.isActive && String(room.createdBy) !== String(userId)) {
+            return res.status(403).json({ message: "This room has been deactivated" });
+        }
+
         // Check already a member
-        const isMember = room.members.find((m) => m.user.toString() === userId);
-        const isOwner = room.createdBy.toString() === userId;
+        const isMember = room.members.find((m) => String(m.user) === String(userId));
+        const isOwner = String(room.createdBy) === String(userId);
 
         if (isMember) {
             // Already a member — if owner, ensure they are admin
@@ -186,13 +204,18 @@ export const joinPublicRoomController = async (req, res, next) => {
         }
 
         // Check if banned
-        const isBanned = room.bannedUsers?.some((id) => id.toString() === userId);
+        const isBanned = room.bannedUsers?.some((id) => String(id) === String(userId));
         if (isBanned) {
             return res.status(403).json({ message: "You have been banned from this room" });
         }
 
-        const isMember = room.members.find((m) => m.user.toString() === userId);
-        const isOwner = room.createdBy.toString() === userId;
+        // Check if deactivated (only owner can join deactivated rooms)
+        if (!room.isActive && String(room.createdBy) !== String(userId)) {
+            return res.status(403).json({ message: "This room has been deactivated" });
+        }
+
+        const isMember = room.members.find((m) => String(m.user) === String(userId));
+        const isOwner = String(room.createdBy) === String(userId);
 
         if (isMember) {
             // Already a member — if owner, ensure they are admin
@@ -242,20 +265,27 @@ export const leaveRoomController = async (req, res, next) => {
         const room = await Room.findById(roomId);
         if (!room) return res.status(404).json({ message: "Room not found" });
 
-        const isMember = room.members.some((m) => m.user.toString() === userId);
+        const isMember = room.members.some((m) => String(m.user) === String(userId));
         if (!isMember) {
             return res.status(400).json({ message: "You are not a member of this room" });
         }
 
         // If the admin is leaving and there are other members, promote next member
         const isAdmin = room.members.find(
-            (m) => m.user.toString() === userId && m.role === "admin"
+            (m) => String(m.user) === String(userId) && m.role === "admin"
         );
 
         room.members = room.members.filter((m) => m.user.toString() !== userId);
 
         if (isAdmin && room.members.length > 0) {
-            room.members[0].role = "admin"; // promote oldest remaining member
+            const nextAdmin = room.members[0];
+            nextAdmin.role = "admin"; // promote oldest remaining member
+            
+            // Notify about promotion for real-time UI updates
+            publishToQueue("room.member.promoted", {
+                roomId,
+                newAdminId: nextAdmin.user.toString()
+            }).catch(() => {});
         }
 
         // If no members left, deactivate room
@@ -283,32 +313,43 @@ export const kickMemberController = async (req, res, next) => {
         const room = await Room.findById(roomId);
         if (!room) return res.status(404).json({ message: "Room not found" });
 
-        // Only admin can kick
-        const requester = room.members.find((m) => m.user.toString() === userId);
+        const requester = room.members.find((m) => {
+            const mId = m.user?._id || m.user;
+            return String(mId) === String(userId);
+        });
         if (!requester || requester.role !== "admin") {
             return res.status(403).json({ message: "Only the room admin can kick members" });
         }
 
         // Can't kick yourself
-        if (memberId === userId) {
+        if (String(memberId) === String(userId)) {
             return res.status(400).json({ message: "You cannot kick yourself. Use leave room instead." });
         }
 
         // Can't kick the owner
-        if (room.createdBy.toString() === memberId) {
+        const ownerId = room.createdBy?._id || room.createdBy;
+        if (String(ownerId) === String(memberId)) {
             return res.status(403).json({ message: "The room owner cannot be kicked" });
         }
 
-        const isMember = room.members.some((m) => m.user.toString() === memberId);
-        if (!isMember) {
-            return res.status(404).json({ message: "Member not found in room" });
-        }
+        // Robust member check
+        const isMember = room.members.some((m) => {
+            const mId = m.user?._id || m.user;
+            return String(mId) === String(memberId);
+        });
 
-        room.members = room.members.filter((m) => m.user.toString() !== memberId);
+        // 1. Remove from DB members list if present
+        if (isMember) {
+            room.members = room.members.filter((m) => {
+                const mId = m.user?._id || m.user;
+                return String(mId) !== String(memberId);
+            });
+        }
         
-        // Add to banned list
+        // 2. Add to banned list (always, even if not in DB members list)
         if (!room.bannedUsers) room.bannedUsers = [];
-        if (!room.bannedUsers.includes(memberId)) {
+        const isAlreadyBanned = room.bannedUsers.some(b => String(b) === String(memberId));
+        if (!isAlreadyBanned) {
             room.bannedUsers.push(memberId);
         }
 
@@ -316,10 +357,13 @@ export const kickMemberController = async (req, res, next) => {
         await redis.del(`room:${roomId}`);
         await redis.delByPattern("rooms:public:*");
 
-        // Notify realtime-service of the kick
+        // 3. Notify realtime-service of the kick (triggers socket:kicked and presence cleanup)
         publishToQueue("room.member.kicked", { roomId, memberId }).catch(() => { });
 
-        res.status(200).json({ message: "Member kicked successfully" });
+        res.status(200).json({ 
+            message: "Member kicked successfully",
+            removedFromMembers: isMember
+        });
     } catch (error) {
         next(error);
     }
@@ -377,8 +421,6 @@ export const deleteRoomController = async (req, res, next) => {
 
         await redis.del(`room:${roomId}`);
         await redis.delByPattern("rooms:public:*");
-
-        await Room.findByIdAndUpdate(roomId, { isActive: false });
 
         // Notify other services
         publishToQueue("room.deleted", { roomId }).catch(() => { });

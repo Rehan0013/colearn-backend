@@ -1,4 +1,5 @@
 import redis from "../../db/redis.js";
+import Room from "../../models/room.model.js";
 
 const POMODORO_TTL = 60 * 60; // 1 hour
 
@@ -41,24 +42,47 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Start timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:start", async ({ roomId, mode = "focus" }) => {
         try {
-            // Check if user is admin (owner)
-            const room = await Room.findById(roomId);
-            if (!room || room.createdBy.toString() !== userId) return;
+            console.log(`[pomodoro:start] Request from ${userId} for room ${roomId}`);
+
+            // Check if user is admin (owner or role:admin)
+            const room = await Room.findById(roomId).lean();
+            if (!room) {
+                console.log(`[pomodoro:start] Room ${roomId} not found`);
+                return;
+            }
+
+            const isOwner = String(room.createdBy?._id || room.createdBy) === String(userId);
+            const isAdmin = room.members?.some(m => {
+                const mUserId = m.user?._id || m.user;
+                return String(mUserId) === String(userId) && m.role === "admin";
+            });
+
+            console.log(`[pomodoro:start] Auth check: isOwner=${isOwner}, isAdmin=${isAdmin}`);
+
+            if (!isOwner && !isAdmin) {
+                console.log(`[pomodoro:start] Access denied for ${userId}`);
+                socket.emit("error", { message: "Only administrators can start the timer" });
+                return;
+            }
 
             const existing = await getPomodoroState(roomId);
-            if (existing?.isRunning) return;
+            if (existing?.isRunning) {
+                console.log(`[pomodoro:start] Timer already running for room ${roomId}`);
+                return;
+            }
 
             const duration = DURATIONS[mode] ?? DURATIONS.focus;
             const state = {
                 roomId,
                 mode,
                 duration,
-                remaining: existing?.remaining ?? duration,
+                remaining: (existing?.remaining && existing.remaining > 0) ? existing.remaining : duration,
                 isRunning: true,
                 startedBy: userId,
                 startedAt: Date.now(),
             };
 
+            console.log(`[pomodoro:start] Setting state:`, state);
             await setPomodoroState(roomId, state);
             io.to(roomId).emit("pomodoro:state", state);
 
@@ -71,12 +95,24 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Pause timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:pause", async ({ roomId }) => {
         try {
-            const room = await Room.findById(roomId);
-            if (!room || room.createdBy.toString() !== userId) return;
+            const room = await Room.findById(roomId).lean();
+            if (!room) return;
+
+            const isOwner = String(room.createdBy?._id || room.createdBy) === String(userId);
+            const isAdmin = room.members?.some(m => {
+                const mUserId = m.user?._id || m.user;
+                return String(mUserId) === String(userId) && m.role === "admin";
+            });
+
+            if (!isOwner && !isAdmin) {
+                socket.emit("error", { message: "Only administrators can control the timer" });
+                return;
+            }
 
             const state = await getPomodoroState(roomId);
             if (!state?.isRunning) return;
 
+            console.log(`[pomodoro:pause] Pausing room ${roomId}`);
             stopTicking(roomId);
 
             state.isRunning = false;
@@ -90,9 +126,21 @@ export const registerPomodoroHandlers = (io, socket) => {
     // ── Reset timer ──────────────────────────────────────────────────────────
     socket.on("pomodoro:reset", async ({ roomId, mode = "focus" }) => {
         try {
-            const room = await Room.findById(roomId);
-            if (!room || room.createdBy.toString() !== userId) return;
+            const room = await Room.findById(roomId).lean();
+            if (!room) return;
 
+            const isOwner = String(room.createdBy?._id || room.createdBy) === String(userId);
+            const isAdmin = room.members?.some(m => {
+                const mUserId = m.user?._id || m.user;
+                return String(mUserId) === String(userId) && m.role === "admin";
+            });
+
+            if (!isOwner && !isAdmin) {
+                socket.emit("error", { message: "Only administrators can control the timer" });
+                return;
+            }
+
+            console.log(`[pomodoro:reset] Resetting room ${roomId} to mode ${mode}`);
             stopTicking(roomId);
 
             const state = {
@@ -116,8 +164,8 @@ export const registerPomodoroHandlers = (io, socket) => {
 // ── Ticker ────────────────────────────────────────────────────────────────────
 
 const startTicking = (io, roomId) => {
-    // Prevent duplicate intervals for the same room
-    if (roomIntervals.has(roomId)) return;
+    // Clear any existing interval to prevent duplicates or "stuck" timers
+    stopTicking(roomId);
 
     const interval = setInterval(async () => {
         try {

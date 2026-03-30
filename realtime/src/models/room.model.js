@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import roomDb from "../db/roomDb.js";
 
 const roomSchema = new mongoose.Schema(
     {
@@ -78,9 +79,12 @@ const roomSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Index for browse and performance
+// Index for fast invite code lookups and browsing
+roomSchema.index({ inviteCode: 1 });
 roomSchema.index({ subject: 1, isPrivate: 1 });
 roomSchema.index({ createdBy: 1 });
 
-const Room = mongoose.model("Room", roomSchema);
+// Use the dedicated room DB connection so we query colearn-room, not colearn-chat
+const Room = roomDb.model("Room", roomSchema);
 export default Room;
+

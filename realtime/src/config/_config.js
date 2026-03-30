@@ -9,6 +9,7 @@ export default {
     client_url: process.env.CLIENT_URL,
     node_env: process.env.NODE_ENV || "development",
     mongo_uri: process.env.MONGO_URI,
+    room_mongo_uri: process.env.ROOM_MONGO_URI || process.env.MONGO_URI,
     imagekit_public_key: process.env.IMAGEKIT_PUBLIC_KEY,
     imagekit_private_key: process.env.IMAGEKIT_PRIVATE_KEY,
     imagekit_url_endpoint: process.env.IMAGEKIT_URL_ENDPOINT,
