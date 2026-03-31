@@ -41,7 +41,7 @@ export const setTokenCookies = (res, accessToken, refreshToken) => {
     res.cookie("token", accessToken, {
         httpOnly: true,
         secure: config.node_env === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 15 * 60 * 1000, // 15 minutes
         path: "/",
     });
@@ -49,7 +49,7 @@ export const setTokenCookies = (res, accessToken, refreshToken) => {
     res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: config.node_env === "production",
-        sameSite: "strict",
+        sameSite: "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/",
     });
