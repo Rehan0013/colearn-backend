@@ -27,11 +27,21 @@ services:
       - REDIS_URI=redis://redis:6379
       - RABBITMQ_URI=amqp://rabbitmq:5672
       - JWT_SECRET=your_jwt_secret
+      - JWT_REFRESH_SECRET=your_jwt_refresh_secret
       - CLIENT_URL=http://localhost:3000
+      - IMAGEKIT_PUBLIC_KEY=your_imagekit_public_key
+      - IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key
+      - IMAGEKIT_URL_ENDPOINT=your_imagekit_url_endpoint
+      - GOOGLE_CLIENT_ID=your_google_client_id
+      - GOOGLE_CLIENT_SECRET=your_google_client_secret
+      - CLIENT_URL=http://localhost:3000
+      - NODE_ENV=development
     depends_on:
       - mongodb
       - redis
       - rabbitmq
+      - imagekit
+      - google oauth
 
   room:
     build: ./room
@@ -42,6 +52,9 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/colearn_room
       - REDIS_URI=redis://redis:6379
       - RABBITMQ_URI=amqp://rabbitmq:5672
+      - NODE_ENV=development
+      - JWT_SECRET=your_jwt_secret
+      - CLIENT_URL=http://localhost:3000
     depends_on:
       - mongodb
       - redis
@@ -56,10 +69,18 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/colearn_realtime
       - REDIS_URI=redis://redis:6379
       - RABBITMQ_URI=amqp://rabbitmq:5672
+      - NODE_ENV=development
+      - JWT_SECRET=your_jwt_secret
+      - IMAGEKIT_PUBLIC_KEY=your_imagekit_public_key
+      - IMAGEKIT_PRIVATE_KEY=your_imagekit_private_key
+      - IMAGEKIT_URL_ENDPOINT=your_imagekit_url_endpoint
+      - CLIENT_URL=http://localhost:3000
     depends_on:
       - mongodb
       - redis
       - rabbitmq
+      - socket.io
+      - imagekit
 
   note:
     build: ./note
@@ -69,6 +90,10 @@ services:
       - PORT=5004
       - MONGO_URI=mongodb://mongodb:27017/colearn_note
       - RABBITMQ_URI=amqp://rabbitmq:5672
+      - NODE_ENV=development
+      - JWT_SECRET=your_jwt_secret
+      - MAX_VERSIONS=20
+      - CLIENT_URL=http://localhost:3000
     depends_on:
       - mongodb
       - rabbitmq
@@ -82,6 +107,9 @@ services:
       - MONGO_URI=mongodb://mongodb:27017/colearn_session
       - REDIS_URI=redis://redis:6379
       - RABBITMQ_URI=amqp://rabbitmq:5672
+      - NODE_ENV=development
+      - JWT_SECRET=your_jwt_secret
+      - CLIENT_URL=http://localhost:3000
     depends_on:
       - mongodb
       - redis
@@ -93,11 +121,15 @@ services:
       - "5006:5006"
     environment:
       - PORT=5006
-      - MONGO_URI=mongodb://mongodb:27017/colearn_notification
       - RABBITMQ_URI=amqp://rabbitmq:5672
+      - CLIENT_ID=your_client_id
+      - CLIENT_SECRET=your_client_secret
+      - REFRESH_TOKEN=your_refresh_token
+      - EMAIL_USER=your_email_user
     depends_on:
-      - mongodb
       - rabbitmq
+      - nodemailer
+      - google oauth
 
 volumes:
   mongodb_data:

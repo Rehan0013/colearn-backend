@@ -267,5 +267,88 @@ docker-compose up --build
 
 ---
 
+## 🚀 Getting Started
+
+### 📋 Prerequisites
+
+To run this project, you need to have the following installed:
+- **Node.js**: `v18.x` or higher
+- **Docker & Docker Compose**: For containerized setup (Recommended)
+- **MongoDB**: `v6.x` or higher (if running locally)
+- **Redis**: `v6.x` or higher (if running locally)
+- **RabbitMQ**: (if running locally)
+
+---
+
+### 🐳 One-Click Setup (Docker)
+
+The easiest way to get the entire backend ecosystem running is using **Docker Compose**:
+
+1. **Clone the repository**:
+   ```bash
+   git clone <your-repo-url>
+   cd colearn-backend
+   ```
+
+2. **Run with Docker**:
+   ```bash
+   docker-compose up --build
+   ```
+   This will spin up:
+   - **Infrastructure**: MongoDB, Redis, RabbitMQ
+   - **Microservices**: All 6 services (Auth, Room, Realtime, Note, Session, Notification) 
+   - **Internal Mapping**: Services will be accessible on their respective ports (5001-5006).
+
+---
+
+### 🛠️ Manual Development Setup
+
+If you prefer to run services individually for debugging:
+
+1. **Start Infrastructure**: Ensure MongoDB, Redis, and RabbitMQ are running on your local machine or cloud.
+2. **Install dependencies**: Run `npm install` in each service directory.
+   ```bash
+   # Quick install for all services
+   for d in auth room realtime note session notification; do (cd $d && npm install); done
+   ```
+3. **Configure .env**: Each service folder contains a `.env` file. Update the connection strings to point to your local infrastructure:
+   - Local Mongo: `mongodb://localhost:27017/colearn-<service>`
+   - Local Redis: `redis://localhost:6379`
+   - Local RabbitMQ: `amqp://localhost:5672`
+4. **Run Services**: Start each service using its local start script.
+   ```bash
+   # Example: Running the Auth service
+   cd auth && npm run dev
+   ```
+
+---
+
+### ⚙️ Environment Variables Summary
+
+Each service requires specific environment variables. Here’s a quick reference:
+
+| Variable | auth | room | sess | note | realtime | notification |
+|----------|------|------|------|------|----------|--------------|
+| **PORT** | 5001 | 5002 | 5005 | 5004 | 5003 | 5006 |
+| **MONGO_URI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **REDIS_URI** | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
+| **RABBITMQ_URI** | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| **JWT_SECRET** | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| **IMAGEKIT_KEYS**| ✅ | ❌ | ❌ | ❌ | ✅ | ❌ |
+| **CLIENT_ID** | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ |
+
+> [!TIP]
+> Ensure the **JWT_SECRET** and **JWT_REFRESH_SECRET** are identical across all microservices to maintain session consistency.
+
+---
+
+### 🔍 Troubleshooting
+
+- **Service Connection Issues**: If running on Docker, ensure the `MONGO_URI` uses the service name (e.g., `mongodb://mongodb:27017/...`) instead of `localhost`.
+- **Email Failures**: For the `Notification` service, ensure your Google OAuth2 `REFRESH_TOKEN` and `EMAIL_USER` are correctly configured in the `.env`.
+- **Socket Disconnections**: Check the `REDIS_URI` in the `Realtime` service. It is required for managing room states and presence.
+
+---
+
 ## 🛡️ License
 MIT License.
