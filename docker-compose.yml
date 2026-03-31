@@ -1,0 +1,103 @@
+services:
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  auth:
+    build: ./auth
+    ports:
+      - "5001:5001"
+    environment:
+      - PORT=5001
+      - MONGO_URI=mongodb://mongodb:27017/colearn_auth
+      - REDIS_URI=redis://redis:6379
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+      - JWT_SECRET=your_jwt_secret
+      - CLIENT_URL=http://localhost:3000
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+
+  room:
+    build: ./room
+    ports:
+      - "5002:5002"
+    environment:
+      - PORT=5002
+      - MONGO_URI=mongodb://mongodb:27017/colearn_room
+      - REDIS_URI=redis://redis:6379
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+
+  realtime:
+    build: ./realtime
+    ports:
+      - "5003:5003"
+    environment:
+      - PORT=5003
+      - MONGO_URI=mongodb://mongodb:27017/colearn_realtime
+      - REDIS_URI=redis://redis:6379
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+
+  note:
+    build: ./note
+    ports:
+      - "5004:5004"
+    environment:
+      - PORT=5004
+      - MONGO_URI=mongodb://mongodb:27017/colearn_note
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - rabbitmq
+
+  session:
+    build: ./session
+    ports:
+      - "5005:5005"
+    environment:
+      - PORT=5005
+      - MONGO_URI=mongodb://mongodb:27017/colearn_session
+      - REDIS_URI=redis://redis:6379
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - redis
+      - rabbitmq
+
+  notification:
+    build: ./notification
+    ports:
+      - "5006:5006"
+    environment:
+      - PORT=5006
+      - MONGO_URI=mongodb://mongodb:27017/colearn_notification
+      - RABBITMQ_URI=amqp://rabbitmq:5672
+    depends_on:
+      - mongodb
+      - rabbitmq
+
+volumes:
+  mongodb_data:
