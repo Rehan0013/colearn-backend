@@ -12,6 +12,7 @@ import authRoutes from "./routes/auth.route.js";
 import config from "./config/_config.js";
 
 const app = express();
+app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(morgan("dev"));

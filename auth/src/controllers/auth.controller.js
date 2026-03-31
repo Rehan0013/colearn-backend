@@ -238,10 +238,11 @@ export const refreshTokenController = async (req, res, next) => {
         const user = await userModel.findById(decoded.id);
         const newAccessToken = generateAccessToken(user);
 
+        const isProduction = config.node_env === "production";
         res.cookie("token", newAccessToken, {
             httpOnly: true,
-            secure: config.node_env === "production",
-            sameSite: "lax",
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
             maxAge: 15 * 60 * 1000,
             path: "/",
         });

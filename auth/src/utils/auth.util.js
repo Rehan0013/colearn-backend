@@ -38,18 +38,20 @@ export const generateRefreshToken = async (userId) => {
  * Set access + refresh tokens as httpOnly cookies
  */
 export const setTokenCookies = (res, accessToken, refreshToken) => {
+    const isProduction = config.node_env === "production";
+
     res.cookie("token", accessToken, {
         httpOnly: true,
-        secure: config.node_env === "production",
-        sameSite: "lax",
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
         maxAge: 15 * 60 * 1000, // 15 minutes
         path: "/",
     });
 
     res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
-        secure: config.node_env === "production",
-        sameSite: "lax",
+        secure: isProduction,
+        sameSite: isProduction ? "none" : "lax",
         maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
         path: "/",
     });
