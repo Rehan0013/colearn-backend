@@ -352,6 +352,3 @@ Each service requires specific environment variables. Here’s a quick reference
 
 ## 🛡️ License
 MIT License.
-
-
-

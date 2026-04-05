@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 import Session from "../models/session.model.js";
 import UserStats from "../models/userStats.model.js";
 import redis from "../db/redis.js";
-import { endSession } from "../utils/session.util.js";
+import { endSession, validateStreak } from "../utils/session.util.js";
 import { publishToQueue } from "../broker/rabbit.js";
 
 // ── Manual end session ─────────────────────────────────────────────────────────
@@ -34,6 +34,11 @@ export const getStatsController = async (req, res, next) => {
         if (cached) return res.status(200).json(JSON.parse(cached));
 
         const stats = await UserStats.findOne({ userId });
+
+        if (stats) {
+            // Lazy streak reset if user missed a day
+            await validateStreak(stats, req.user.email, req.user.fullName);
+        }
 
         // Calculate today's study minutes from sessions
         const todayStart = new Date();

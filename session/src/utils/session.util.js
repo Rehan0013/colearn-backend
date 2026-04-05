@@ -140,6 +140,34 @@ const checkStreakMilestone = async (userId, streak, email, fullName) => {
     }
 };
 
+/**
+ * Validates and resets a broken streak if the user missed a day.
+ * Triggered on stats fetch to ensure the displayed streak is always accurate.
+ */
+export const validateStreak = async (stats, userEmail, userFullName) => {
+    const todayStr = getTodayString();
+    const yesterday = getYesterdayString();
+    const lastDate = stats.lastStudyDate;
+
+    // If last study was neither today nor yesterday, the streak is broken
+    if (lastDate && lastDate !== todayStr && lastDate !== yesterday) {
+        if (stats.streak > 0) {
+            const oldStreak = stats.streak;
+            stats.streak = 0;
+            await stats.save();
+
+            console.log(`[Streak] Reset streak from ${oldStreak} to 0 for user ${stats.userId}`);
+
+            // Sync reset to auth service
+            publishToQueue("user.stats.updated", {
+                userId: stats.userId,
+                streak: 0,
+                totalStudyMinutes: stats.totalStudyMinutes
+            }).catch(err => console.error("Failed to sync reset streak:", err));
+        }
+    }
+};
+
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
 const getTodayString = () => new Date().toISOString().split("T")[0]; // "2025-03-27"
