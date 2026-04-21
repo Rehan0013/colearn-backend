@@ -286,7 +286,7 @@ The easiest way to get the entire backend ecosystem running is using **Docker Co
 
 1. **Clone the repository**:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/Rehan0013/colearn-backend.git
    cd colearn-backend
    ```
 
