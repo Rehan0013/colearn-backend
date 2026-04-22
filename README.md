@@ -292,12 +292,22 @@ The easiest way to get the entire backend ecosystem running is using **Docker Co
 
 2. **Run with Docker**:
    ```bash
-   docker-compose up --build
+   docker compose up -d
    ```
    This will spin up:
    - **Infrastructure**: MongoDB, Redis, RabbitMQ
    - **Microservices**: All 6 services (Auth, Room, Realtime, Note, Session, Notification) 
    - **Internal Mapping**: Services will be accessible on their respective ports (5001-5006).
+
+3. **Stop the services**:
+   ```bash
+   docker compose down
+   ```
+
+4. **Factory Reset (Remove everything including data)**:
+   ```bash
+   docker compose down -v
+   ```
 
 ---
 
