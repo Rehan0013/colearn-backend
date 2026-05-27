@@ -7,6 +7,7 @@ import morgan from "morgan";
 import passport from "passport";
 import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 
+import { rateLimiter } from "./middlewares/rateLimiter.middleware.js";
 import authRoutes from "./routes/auth.route.js";
 
 import config from "./config/_config.js";
@@ -40,7 +41,7 @@ app.get("/health", (req, res) => {
     res.json({ message: "Auth service is running", uptime: process.uptime() });
 });
 
-app.use("/api/auth", authRoutes);
+app.use("/api/auth", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPrefix: "auth" }), authRoutes);
 
 // Global Error Handler
 app.use((err, req, res, next) => {

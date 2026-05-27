@@ -14,6 +14,10 @@ export default {
     set: (...args) => redis.set(...args),
     del: (...args) => redis.del(...args),
     exists: (...args) => redis.exists(...args),
+    incr: (...args) => redis.incr(...args),
+    expire: (...args) => redis.expire(...args),
+    ttl: (...args) => redis.ttl(...args),
+    multi: (...args) => redis.multi(...args),
     async delByPattern(pattern) {
         let cursor = "0";
         do {

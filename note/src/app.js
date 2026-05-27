@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import notesRoutes from "./routes/notes.routes.js";
+import { rateLimiter } from "./middlewares/rateLimiter.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import config from "./config/_config.js";
 
@@ -11,7 +12,7 @@ app.use(cors({ origin: config.client_url, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
-app.use("/api/notes", notesRoutes);
+app.use("/api/notes", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPrefix: "note" }), notesRoutes);
 
 app.get("/health", (req, res) => {
     res.status(200).json({ status: "ok", service: "notes-service" });
