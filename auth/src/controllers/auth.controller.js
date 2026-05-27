@@ -61,6 +61,8 @@ export const verifyRegistrationController = async (req, res, next) => {
 
         // Clean up Redis
         await redis.del(`reg_${email}`);
+        await redis.del(`otp_count:${email}`);
+        await redis.del(`otp_cooldown:${email}`);
 
         // Publish events
         await publishToQueue("user_created", {
@@ -258,10 +260,34 @@ export const refreshTokenController = async (req, res, next) => {
 export const forgotPasswordController = async (req, res, next) => {
     try {
         const { email } = req.body;
+
+        // ─── OTP Send Limit Check ───
+        const cooldownKey = `otp_cooldown:${email}`;
+        const countKey = `otp_count:${email}`;
+
+        // 1. Cooldown check (60 seconds)
+        const hasCooldown = await redis.exists(cooldownKey);
+        if (hasCooldown) {
+            return res.status(429).json({ message: "Please wait 1 minute before requesting another OTP." });
+        }
+
+        // 2. Max attempts check (3 attempts per 10 minutes)
+        const currentCount = await redis.get(countKey);
+        if (currentCount && parseInt(currentCount, 10) >= 3) {
+            return res.status(429).json({ message: "Maximum OTP limit reached. Please try again in 10 minutes." });
+        }
+
         const user = await userModel.findOne({ email });
 
         // Always return same message to prevent email enumeration
         if (!user) {
+            // Increment limit count and set cooldown for non-existing email to prevent spam
+            const newCount = await redis.incr(countKey);
+            if (newCount === 1) {
+                await redis.expire(countKey, 600); // 10 minutes
+            }
+            await redis.set(cooldownKey, "1", "EX", 60);
+
             return res.status(200).json({ message: "If this email is registered, an OTP has been sent." });
         }
 
@@ -274,6 +300,13 @@ export const forgotPasswordController = async (req, res, next) => {
 
         const otp = generateOTP();
         await redis.set(`reset_${email}`, otp, "EX", 60 * 10); // 10 min expiry
+
+        // ─── Apply OTP Send Limits ───
+        const newCount = await redis.incr(countKey);
+        if (newCount === 1) {
+            await redis.expire(countKey, 600); // 10 minutes
+        }
+        await redis.set(cooldownKey, "1", "EX", 60); // 1 minute cooldown
 
         await publishToQueue("send_otp", {
             email,
@@ -307,6 +340,8 @@ export const resetPasswordController = async (req, res, next) => {
         await userModel.findOneAndUpdate({ email }, { password: hashedPassword });
 
         await redis.del(`reset_${email}`);
+        await redis.del(`otp_count:${email}`);
+        await redis.del(`otp_cooldown:${email}`);
 
         res.status(200).json({ message: "Password reset successfully. Please log in." });
     } catch (error) {

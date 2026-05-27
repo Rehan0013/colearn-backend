@@ -72,6 +72,26 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
         throw error;
     }
 
+    // ─── OTP Send Limit Check ───
+    const cooldownKey = `otp_cooldown:${email}`;
+    const countKey = `otp_count:${email}`;
+
+    // 1. Cooldown check (60 seconds)
+    const hasCooldown = await redis.exists(cooldownKey);
+    if (hasCooldown) {
+        const error = new Error("Please wait 1 minute before requesting another OTP.");
+        error.statusCode = 429;
+        throw error;
+    }
+
+    // 2. Max attempts check (3 attempts per 10 minutes)
+    const currentCount = await redis.get(countKey);
+    if (currentCount && parseInt(currentCount, 10) >= 3) {
+        const error = new Error("Maximum OTP limit reached. Please try again in 10 minutes.");
+        error.statusCode = 429;
+        throw error;
+    }
+
     // Hash password before storing in Redis
     const hashedPassword = await bcrypt.hash(password, 12); // 12 rounds is safer than 10
 
@@ -88,6 +108,13 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
     // Store in Redis — expires in 10 minutes
     const userData = { email, password: hashedPassword, firstName, lastName, avatar: avatarUrl };
     await redis.set(`reg_${email}`, JSON.stringify({ userData, otp }), "EX", 60 * 10);
+
+    // ─── Apply OTP Send Limits ───
+    const newCount = await redis.incr(countKey);
+    if (newCount === 1) {
+        await redis.expire(countKey, 600); // 10 minutes
+    }
+    await redis.set(cooldownKey, "1", "EX", 60); // 1 minute cooldown
 
     // Publish OTP email event to RabbitMQ
     await publishToQueue("send_otp", {

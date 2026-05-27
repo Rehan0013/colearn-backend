@@ -11,6 +11,10 @@ const redis = {
     set: (...args) => redisClient.set(...args),
     del: (...args) => redisClient.del(...args),
     exists: (...args) => redisClient.exists(...args),
+    incr: (...args) => redisClient.incr(...args),
+    expire: (...args) => redisClient.expire(...args),
+    ttl: (...args) => redisClient.ttl(...args),
+    multi: (...args) => redisClient.multi(...args),
     async delByPattern(pattern) {
         let cursor = "0";
         do {

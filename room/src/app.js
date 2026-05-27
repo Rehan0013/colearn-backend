@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import roomRoutes from "./routes/room.route.js";
+import { rateLimiter } from "./middlewares/rateLimiter.middleware.js";
 import { errorHandler } from "./middlewares/error.middleware.js";
 import config from "./config/_config.js";
 
@@ -11,7 +12,7 @@ app.use(cors({ origin: config.CLIENT_URL, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
 
-app.use("/api/rooms", roomRoutes);
+app.use("/api/rooms", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPrefix: "room" }), roomRoutes);
 
 // 404
 app.use((req, res) => {

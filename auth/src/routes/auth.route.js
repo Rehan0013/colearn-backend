@@ -27,14 +27,21 @@ import {
 } from "../middlewares/validator.middleware.js";
 
 import { authMiddleware } from "../middlewares/auth.middleware.js";
+import { rateLimiter } from "../middlewares/rateLimiter.middleware.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
+const authLimiter = rateLimiter({
+    windowSeconds: 900, // 15 minutes
+    maxRequests: 15,    // Max 15 attempts
+    keyPrefix: "auth_sensitive"
+});
+
 // ─── Email / Password Auth ─────────────────────────────────────────────────────
-router.post("/register", upload.single("avatar"), registerValidation, registerController);
+router.post("/register", authLimiter, upload.single("avatar"), registerValidation, registerController);
 router.post("/verify-registration", verifyRegistrationValidation, verifyRegistrationController);
-router.post("/login", loginValidation, loginController);
+router.post("/login", authLimiter, loginValidation, loginController);
 router.get("/logout", logoutController);
 router.post("/logout-all", authMiddleware, logoutAllController);
 
@@ -42,8 +49,8 @@ router.post("/logout-all", authMiddleware, logoutAllController);
 router.post("/refresh-token", refreshTokenController);
 
 // ─── Password Reset ────────────────────────────────────────────────────────────
-router.post("/forgot-password", forgotPasswordValidation, forgotPasswordController);
-router.post("/reset-password", resetPasswordValidation, resetPasswordController);
+router.post("/forgot-password", authLimiter, forgotPasswordValidation, forgotPasswordController);
+router.post("/reset-password", authLimiter, resetPasswordValidation, resetPasswordController);
 
 // ─── User ──────────────────────────────────────────────────────────────────────
 router.get("/current-user", authMiddleware, getCurrentUserController);
