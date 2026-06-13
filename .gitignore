@@ -1,5 +1,7 @@
 node_modules
 .env
+dist
+**/dist
 
 docker-compose.yml
 
