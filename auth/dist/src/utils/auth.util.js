@@ -6,24 +6,16 @@ import userModel from "../models/user.model.js";
 import { generateOTP } from "./otp.js";
 import { publishToQueue } from "../broker/rabbit.js";
 import { uploadImage } from "../services/storage.service.js";
-
-// ─── Token helpers ─────────────────────────────────────────────────────────────
-
 /**
  * Generate a short-lived access token (15 min)
  */
 export const generateAccessToken = (user) => {
-    return jwt.sign(
-        {
-            id: user._id,
-            email: user.email,
-            fullName: user.fullName
-        },
-        config.jwt_secret,
-        { expiresIn: "15m" }
-    );
+    return jwt.sign({
+        id: user._id,
+        email: user.email,
+        fullName: user.fullName
+    }, config.jwt_secret, { expiresIn: "15m" });
 };
-
 /**
  * Generate a long-lived refresh token (7 days) and store it in Redis
  */
@@ -33,13 +25,11 @@ export const generateRefreshToken = async (userId) => {
     await redis.set(`refresh_${userId}`, refreshToken, "EX", 60 * 60 * 24 * 7);
     return refreshToken;
 };
-
 /**
  * Set access + refresh tokens as httpOnly cookies
  */
 export const setTokenCookies = (res, accessToken, refreshToken) => {
     const isProduction = config.node_env === "production";
-
     res.cookie("token", accessToken, {
         httpOnly: true,
         secure: isProduction,
@@ -47,7 +37,6 @@ export const setTokenCookies = (res, accessToken, refreshToken) => {
         maxAge: 15 * 60 * 1000, // 15 minutes
         path: "/",
     });
-
     res.cookie("refreshToken", refreshToken, {
         httpOnly: true,
         secure: isProduction,
@@ -56,9 +45,6 @@ export const setTokenCookies = (res, accessToken, refreshToken) => {
         path: "/",
     });
 };
-
-// ─── Registration ──────────────────────────────────────────────────────────────
-
 /**
  * Handles registration: checks duplicate, hashes password,
  * uploads avatar, stores in Redis, publishes OTP event.
@@ -71,11 +57,9 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
         error.statusCode = 409;
         throw error;
     }
-
     // ─── OTP Send Limit Check ───
     const cooldownKey = `otp_cooldown:${email}`;
     const countKey = `otp_count:${email}`;
-
     // 1. Cooldown check (60 seconds)
     const hasCooldown = await redis.exists(cooldownKey);
     if (hasCooldown) {
@@ -83,7 +67,6 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
         error.statusCode = 429;
         throw error;
     }
-
     // 2. Max attempts check (3 attempts per 10 minutes)
     const currentCount = await redis.get(countKey);
     if (currentCount && parseInt(currentCount, 10) >= 3) {
@@ -91,31 +74,25 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
         error.statusCode = 429;
         throw error;
     }
-
     // Hash password before storing in Redis
     const hashedPassword = await bcrypt.hash(password, 12); // 12 rounds is safer than 10
-
     // Upload avatar only if provided
     let avatarUrl = "https://cdn-icons-png.flaticon.com/512/149/149071.png";
     if (avatar) {
         const uploaded = await uploadImage(avatar.buffer, avatar.originalname);
         avatarUrl = uploaded.url;
     }
-
     // Generate OTP
     const otp = generateOTP();
-
     // Store in Redis — expires in 10 minutes
     const userData = { email, password: hashedPassword, firstName, lastName, avatar: avatarUrl };
     await redis.set(`reg_${email}`, JSON.stringify({ userData, otp }), "EX", 60 * 10);
-
     // ─── Apply OTP Send Limits ───
     const newCount = await redis.incr(countKey);
     if (newCount === 1) {
         await redis.expire(countKey, 600); // 10 minutes
     }
     await redis.set(cooldownKey, "1", "EX", 60); // 1 minute cooldown
-
     // Publish OTP email event to RabbitMQ
     await publishToQueue("send_otp", {
         email,
@@ -124,19 +101,15 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
         type: "registration",
     });
 };
-
 // ─── Google OAuth ──────────────────────────────────────────────────────────────
-
 /**
  * Handles Google OAuth callback: find or create user, issue tokens, redirect.
  */
 export const handleGoogleCallback = async (res, googleUser) => {
     const email = googleUser.emails[0].value;
     const googleId = googleUser.id;
-
     // Find existing user by googleId or email
     let user = await userModel.findOne({ $or: [{ email }, { googleId }] });
-
     if (!user) {
         // New user via Google — create and publish event
         user = await userModel.create({
@@ -149,33 +122,29 @@ export const handleGoogleCallback = async (res, googleUser) => {
             avatar: googleUser.photos[0].value,
             isVerified: true, // Google users are pre-verified
         });
-
         await publishToQueue("user_created", {
             id: user._id,
             email: user.email,
             fullName: user.fullName,
         });
-
         // Welcome notification
         await publishToQueue("user.welcome", {
             email: user.email,
             fullName: user.fullName,
         });
-    } else if (!user.googleId) {
+    }
+    else if (!user.googleId) {
         // Existing email/password user — link their Google account
         user.googleId = googleId;
         user.isVerified = true;
         await user.save();
     }
-
     // Update last login
     user.lastLogin = new Date();
     await user.save();
-
     // Issue tokens
-    const accessToken = generateAccessToken(user._id);
+    const accessToken = generateAccessToken(user);
     const refreshToken = await generateRefreshToken(user._id);
     setTokenCookies(res, accessToken, refreshToken);
-
     res.redirect(config.client_url);
 };

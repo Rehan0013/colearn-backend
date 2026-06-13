@@ -1,12 +1,35 @@
-import mongoose from "mongoose";
+import mongoose, { Document, Model } from "mongoose";
 
-const userSchema = new mongoose.Schema(
+export interface IUser {
+    email: string;
+    fullName: {
+        firstName: string;
+        lastName: string;
+    };
+    avatar: string;
+    streak: number;
+    lastLogin: Date;
+    lastStreakDate: Date | null;
+    totalStudyMinutes: number;
+    googleId: string | null;
+    password: string | null;
+    isVerified: boolean;
+    refreshToken: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+export interface IUserDocument extends IUser, Document {
+    displayName: string;
+}
+
+const userSchema = new mongoose.Schema<IUserDocument>(
     {
         email: {
             type: String,
             required: true,
             unique: true,
-            lowercase: true,   // normalize email on save
+            lowercase: true,
             trim: true,
         },
         fullName: {
@@ -34,7 +57,7 @@ const userSchema = new mongoose.Schema(
             default: Date.now,
         },
         lastStreakDate: {
-            type: Date,   // track last day streak was updated
+            type: Date,
             default: null,
         },
         totalStudyMinutes: {
@@ -47,19 +70,18 @@ const userSchema = new mongoose.Schema(
         },
         password: {
             type: String,
-            // only required if not a Google OAuth user
-            required: function () {
+            required: function (this: IUserDocument) {
                 return !this.googleId;
             },
             default: null,
         },
         isVerified: {
             type: Boolean,
-            default: false, // true after OTP verification or Google OAuth
+            default: false,
         },
         refreshToken: {
             type: String,
-            default: null,  // stored here as backup (Redis is primary)
+            default: null,
         },
     },
     {
@@ -68,14 +90,14 @@ const userSchema = new mongoose.Schema(
 );
 
 // Virtual for full display name
-userSchema.virtual("displayName").get(function () {
+userSchema.virtual("displayName").get(function (this: IUserDocument) {
     return `${this.fullName.firstName} ${this.fullName.lastName}`;
 });
 
 // Never return password or refreshToken in JSON responses
 userSchema.set("toJSON", {
     virtuals: true,
-    transform: (doc, ret) => {
+    transform: (doc, ret: any) => {
         delete ret.password;
         delete ret.refreshToken;
         delete ret.__v;
@@ -83,6 +105,6 @@ userSchema.set("toJSON", {
     },
 });
 
-const userModel = mongoose.model("User", userSchema);
+const userModel: Model<IUserDocument> = mongoose.models.User || mongoose.model<IUserDocument>("User", userSchema);
 
 export default userModel;

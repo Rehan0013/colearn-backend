@@ -1,14 +1,17 @@
+import { Request, Response, NextFunction } from "express";
 import redis from "../db/redis.js";
+
+interface RateLimiterOptions {
+    windowSeconds?: number;
+    maxRequests?: number;
+    keyPrefix?: string;
+}
 
 /**
  * Express middleware for Redis-backed API Rate Limiting
- * @param {Object} options Configuration options
- * @param {number} options.windowSeconds Time window in seconds (default: 900s = 15m)
- * @param {number} options.maxRequests Max requests allowed within window (default: 100)
- * @param {string} options.keyPrefix Prefix for Redis keys
  */
-export const rateLimiter = ({ windowSeconds = 900, maxRequests = 100, keyPrefix = "rl" } = {}) => {
-    return async (req, res, next) => {
+export const rateLimiter = ({ windowSeconds = 900, maxRequests = 100, keyPrefix = "rl" }: RateLimiterOptions = {}) => {
+    return async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
         try {
             // Get client IP address
             const ip = req.ip || req.headers["x-forwarded-for"] || req.socket.remoteAddress;
@@ -16,8 +19,13 @@ export const rateLimiter = ({ windowSeconds = 900, maxRequests = 100, keyPrefix 
 
             // Atomic operations in a single Redis transaction / pipeline
             const results = await redis.multi().incr(key).ttl(key).exec();
-            const current = results[0][1];
-            let ttl = results[1][1];
+            
+            if (!results) {
+                return next();
+            }
+
+            const current = results[0][1] as number;
+            let ttl = results[1][1] as number;
 
             // If key is brand new (ttl is -1 or less than 0), set expire
             if (ttl < 0) {

@@ -1,9 +1,15 @@
+import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import config from "../config/_config.js";
 import redis from "../db/redis.js";
 import userModel from "../models/user.model.js";
 
-export const authMiddleware = async (req, res, next) => {
+interface DecodedToken extends jwt.JwtPayload {
+    id: string;
+    email: string;
+}
+
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
     try {
         const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
 
@@ -18,9 +24,9 @@ export const authMiddleware = async (req, res, next) => {
         }
 
         // Verify token
-        let decoded;
+        let decoded: DecodedToken;
         try {
-            decoded = jwt.verify(token, config.jwt_secret);
+            decoded = jwt.verify(token, config.jwt_secret) as DecodedToken;
         } catch (err) {
             return res.status(401).json({ message: "Invalid or expired token. Please log in again." });
         }
