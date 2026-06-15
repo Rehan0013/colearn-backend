@@ -22,7 +22,7 @@ const messageSchema = new mongoose.Schema(
         },
         fileType: {
             type: String,
-            enum: ["image", "audio", "video", null],
+            enum: ["image", "audio", "video", "document", null],
             default: null,
         },
         reactions: {

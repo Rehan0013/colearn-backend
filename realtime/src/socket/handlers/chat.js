@@ -6,7 +6,7 @@ import { uploadFile } from "../../services/storage.service.js";
 
 const MAX_HISTORY = 50;
 const ALLOWED_EMOJIS = ["👍", "❤️", "😂", "😮", "😢", "🔥", "🎉"];
-const ALLOWED_FILE_TYPES = ["image", "audio", "video"];
+const ALLOWED_FILE_TYPES = ["image", "audio", "video", "document"];
 
 /**
  * Events:
@@ -80,6 +80,7 @@ export const registerChatHandlers = (io, socket) => {
                         if (lower.match(/\.(jpeg|jpg|gif|png|webp|svg)$/)) fileType = "image";
                         else if (lower.match(/\.(mp4|webm|avi|mov)$/)) fileType = "video";
                         else if (lower.match(/\.(mp3|wav|ogg|m4a)$/)) fileType = "audio";
+                        else fileType = "document";
                     }
                 } catch (error) {
                     console.error("Socket file upload error:", error);
