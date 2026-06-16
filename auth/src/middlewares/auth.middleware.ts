@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
 import config from "../config/_config.js";
 import redis from "../db/redis.js";
 import userModel from "../models/user.model.js";
@@ -18,7 +19,8 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
         }
 
         // Check if token is blacklisted (logged out)
-        const isBlacklisted = await redis.get(`bl_${token}`);
+        const hashedToken = await bcrypt.hash(token, 12);
+        const isBlacklisted = await redis.get(`bl_${hashedToken}`);
         if (isBlacklisted) {
             return res.status(401).json({ message: "Session expired. Please log in again." });
         }

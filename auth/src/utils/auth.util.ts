@@ -36,12 +36,14 @@ export const generateAccessToken = (user: IUserDocument): string => {
 };
 
 /**
- * Generate a long-lived refresh token (7 days) and store it in Redis
+ * Generate a long-lived refresh token (7 days) and store its hash in Redis
  */
 export const generateRefreshToken = async (userId: any): Promise<string> => {
     const refreshToken = jwt.sign({ id: userId }, config.jwt_refresh_secret, { expiresIn: "7d" });
-    // Store in Redis — key: refresh_{userId}, TTL: 7 days
-    await redis.set(`refresh_${userId}`, refreshToken, "EX", 60 * 60 * 24 * 7);
+    // Hash the token before storing in Redis
+    const hashedToken = await bcrypt.hash(refreshToken, 12);
+    // Store hash in Redis — key: refresh_{userId}, TTL: 7 days
+    await redis.set(`refresh_${userId}`, hashedToken, "EX", 60 * 60 * 24 * 7);
     return refreshToken;
 };
 

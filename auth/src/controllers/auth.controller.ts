@@ -183,7 +183,8 @@ export const logoutController = async (req: Request, res: Response, next: NextFu
             if (decoded.exp) {
                 const ttl = decoded.exp - Math.floor(Date.now() / 1000);
                 if (ttl > 0) {
-                    await redis.set(`bl_${token}`, "1", "EX", ttl);
+                    const hashedToken = await bcrypt.hash(token, 12);
+                    await redis.set(`bl_${hashedToken}`, "1", "EX", ttl);
                 }
             }
         } catch {
@@ -245,18 +246,30 @@ export const refreshTokenController = async (req: Request, res: Response, next: 
             return res.status(401).json({ message: "Invalid or expired refresh token" });
         }
 
-        // Check it still exists in Redis (not revoked)
-        const storedToken = await redis.get(`refresh_${decoded.id}`);
-        if (!storedToken || storedToken !== refreshToken) {
+        // Retrieve hash from Redis
+        const storedHash = await redis.get(`refresh_${decoded.id}`);
+        if (!storedHash) {
             return res.status(401).json({ message: "Refresh token revoked. Please log in again." });
         }
 
-        // Issue new access token
+        // Compare presented token with stored hash
+        const isValid = await bcrypt.compare(refreshToken, storedHash);
+        if (!isValid) {
+            return res.status(401).json({ message: "Invalid or expired refresh token" });
+        }
+
+        // Token is valid: rotate refresh token
+        await redis.del(`refresh_${decoded.id}`); // remove old hash
+
+        // Fetch user
         const user = await userModel.findById(decoded.id);
         if (!user) {
             return res.status(401).json({ message: "User no longer exists." });
         }
+
+        // Generate new tokens
         const newAccessToken = generateAccessToken(user);
+        const newRefreshToken = await generateRefreshToken(user._id); // generates and stores hash
 
         const isProduction = config.node_env === "production";
         res.cookie("token", newAccessToken, {
@@ -264,6 +277,14 @@ export const refreshTokenController = async (req: Request, res: Response, next: 
             secure: isProduction,
             sameSite: isProduction ? "none" : "lax",
             maxAge: 15 * 60 * 1000,
+            path: "/",
+        });
+
+        res.cookie("refreshToken", newRefreshToken, {
+            httpOnly: true,
+            secure: isProduction,
+            sameSite: isProduction ? "none" : "lax",
+            maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
             path: "/",
         });
 
