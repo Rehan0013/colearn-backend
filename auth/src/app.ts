@@ -11,18 +11,17 @@ import { rateLimiter } from "./middlewares/rateLimiter.middleware.js";
 import authRoutes from "./routes/auth.route.js";
 
 import config from "./config/_config.js";
+import logger from "./logger.js";
 
 const app = express();
 app.set("trust proxy", 1);
 
 app.use(helmet());
 app.use(morgan("dev"));
-app.use(cors(
-    {
-        origin: config.client_url,
-        credentials: true
-    }
-));
+app.use(cors({
+    origin: config.allowedOrigins, // now an array of allowed origins
+    credentials: true
+}));
 app.use(express.json());
 app.use(cookieParser());
 app.use(passport.initialize());
@@ -45,7 +44,7 @@ app.use("/api/auth", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPref
 
 // Global Error Handler
 app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-    console.error(err.stack);
+    logger.error(err.stack);
     res.status(500).json({ message: "Internal Server Error", error: err.message });
 });
 

@@ -1,5 +1,6 @@
 import { config as dotenvConfig } from "dotenv";
 import { z } from "zod";
+import logger from "../logger.js";
 
 dotenvConfig();
 
@@ -16,17 +17,23 @@ const envSchema = z.object({
     CLIENT_SECRET: z.string().min(1, "CLIENT_SECRET is required"),
     JWT_REFRESH_SECRET: z.string().min(1, "JWT_REFRESH_SECRET is required"),
     CLIENT_URL: z.string().min(1, "CLIENT_URL is required"),
+    ALLOWED_ORIGINS: z.string().optional(), // comma-separated list of origins
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),
 });
 
 const parsedEnv = envSchema.safeParse(process.env);
 
 if (!parsedEnv.success) {
-    console.error("❌ Invalid environment variables:", parsedEnv.error.format());
+    logger.error(parsedEnv.error.format(), "❌ Invalid environment variables:");
     process.exit(1);
 }
 
 const env = parsedEnv.data;
+
+// Compute allowed origins array: if ALLOWED_ORIGINS is set, use it (split by comma and trim), else fallback to CLIENT_URL
+const allowedOrigins = env.ALLOWED_ORIGINS
+    ? env.ALLOWED_ORIGINS.split(',').map((origin) => origin.trim())
+    : [env.CLIENT_URL];
 
 const config = {
     port: env.PORT,
@@ -40,7 +47,8 @@ const config = {
     google_client_id: env.CLIENT_ID,
     google_client_secret: env.CLIENT_SECRET,
     jwt_refresh_secret: env.JWT_REFRESH_SECRET,
-    client_url: env.CLIENT_URL,
+    client_url: env.CLIENT_URL, // kept for backward compatibility
+    allowedOrigins, // array of allowed origins for CORS
     node_env: env.NODE_ENV,
 } as const;
 

@@ -338,7 +338,8 @@ export const forgotPasswordController = async (req: Request, res: Response, next
         }
 
         const otp = generateOTP();
-        await redis.set(`reset_${email}`, otp, "EX", 60 * 10); // 10 min expiry
+        // Store OTP by userId to prevent replay across accounts
+        await redis.set(`reset_${user._id}`, otp, "EX", 60 * 10); // 10 min expiry
 
         // ─── Apply OTP Send Limits ───
         const newCount = await redis.incr(countKey);
@@ -366,7 +367,15 @@ export const resetPasswordController = async (req: Request, res: Response, next:
     try {
         const { email, otp, newPassword } = req.body as ResetPasswordInput;
 
-        const cachedOtp = await redis.get(`reset_${email}`);
+        // Look up the user by email to get the userId
+        const user = await userModel.findOne({ email });
+        if (!user) {
+            // User not found: return the same message to prevent email enumeration
+            return res.status(400).json({ message: "OTP expired or invalid. Please request a new one." });
+        }
+
+        // Retrieve OTP stored by userId
+        const cachedOtp = await redis.get(`reset_${user._id}`);
         if (!cachedOtp) {
             return res.status(400).json({ message: "OTP expired or invalid. Please request a new one." });
         }
@@ -378,7 +387,8 @@ export const resetPasswordController = async (req: Request, res: Response, next:
         const hashedPassword = await bcrypt.hash(newPassword, 12);
         await userModel.findOneAndUpdate({ email }, { password: hashedPassword });
 
-        await redis.del(`reset_${email}`);
+        // Clean up Redis: remove the OTP and rate limit counters for this email
+        await redis.del(`reset_${user._id}`);
         await redis.del(`otp_count:${email}`);
         await redis.del(`otp_cooldown:${email}`);
 
@@ -409,7 +419,7 @@ export const updateProfileController = async (req: Request, res: Response, next:
         const avatar = req.file;
         const userId = req.user!._id;
 
-        const updates = {} as any;
+        const updates: Record<string, string> = {};
         if (firstName) updates["fullName.firstName"] = firstName;
         if (lastName) updates["fullName.lastName"] = lastName;
 

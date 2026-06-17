@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from "express";
 import redis from "../db/redis.js";
+import logger from "../logger.js";
 
 interface RateLimiterOptions {
     windowSeconds?: number;
@@ -48,7 +49,7 @@ export const rateLimiter = ({ windowSeconds = 900, maxRequests = 100, keyPrefix 
             next();
         } catch (error) {
             // Fail open: log error but do not block request if Redis is down
-            console.error("Rate limiter error:", error);
+            logger.error(error instanceof Error ? error : { error }, "Rate limiter error:");
             next();
         }
     };

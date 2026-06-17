@@ -29,7 +29,12 @@ import {
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import { rateLimiter } from "../middlewares/rateLimiter.middleware.js";
 
-const upload = multer({ storage: multer.memoryStorage() });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5 MB
+  },
+});
 const router = express.Router();
 
 const authLimiter = rateLimiter({

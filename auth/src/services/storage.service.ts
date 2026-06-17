@@ -1,6 +1,7 @@
 import { v4 as uuidv4 } from "uuid";
 import ImageKit from "imagekit";
 import config from "../config/_config.js";
+import logger from "../logger.js";
 
 const imagekit = new ImageKit({
     publicKey: config.imagekit_public_key,
@@ -18,7 +19,7 @@ const uploadImage = async (fileBuffer: Buffer, filename: string): Promise<any> =
         });
         return result;
     } catch (error: any) {
-        console.error("ImageKit Upload Failed with Error:", error);
+        logger.error(error, "ImageKit Upload Failed with Error:");
 
         const errorMessage = error.message
             ? error.message

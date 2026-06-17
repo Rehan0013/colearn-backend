@@ -8,6 +8,7 @@ import { generateOTP } from "./otp.js";
 import { publishToQueue } from "../broker/rabbit.js";
 import { uploadImage } from "../services/storage.service.js";
 import { RegisterInput } from "../middlewares/validator.middleware.js";
+import { AppError } from "./appError.js";
 
 // ─── Token helpers ─────────────────────────────────────────────────────────────
 
@@ -84,9 +85,7 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
     // Check user already exists
     const isUserExist = await userModel.findOne({ email });
     if (isUserExist) {
-        const error = new Error("An account with this email already exists") as any;
-        error.statusCode = 409;
-        throw error;
+        throw new AppError("An account with this email already exists", 409);
     }
 
     // ─── OTP Send Limit Check ───
@@ -96,17 +95,13 @@ export const handleRegistration = async ({ email, password, firstName, lastName,
     // 1. Cooldown check (60 seconds)
     const hasCooldown = await redis.exists(cooldownKey);
     if (hasCooldown) {
-        const error = new Error("Please wait 1 minute before requesting another OTP.") as any;
-        error.statusCode = 429;
-        throw error;
+        throw new AppError("Please wait 1 minute before requesting another OTP.", 429);
     }
 
     // 2. Max attempts check (3 attempts per 10 minutes)
     const currentCount = await redis.get(countKey);
     if (currentCount && parseInt(currentCount, 10) >= 3) {
-        const error = new Error("Maximum OTP limit reached. Please try again in 10 minutes.") as any;
-        error.statusCode = 429;
-        throw error;
+        throw new AppError("Maximum OTP limit reached. Please try again in 10 minutes.", 429);
     }
 
     // Hash password before storing in Redis
