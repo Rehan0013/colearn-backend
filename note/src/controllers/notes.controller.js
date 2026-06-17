@@ -1,7 +1,9 @@
 import Note from "../models/note.model.js";
 import redis from "../db/redis.js";
 import { saveNoteVersion } from "../utils/notes.util.js";
-import { exportAsMarkdown, exportAsPDF } from "../utils/export.util.js";
+import { exportAsMarkdown, exportAsPDF, exportAsSVG, exportAsJSON } from "../utils/export.util.js";
+import jwt from "jsonwebtoken";
+import config from "../config/_config.js";
 
 const CACHE_TTL = 60 * 5; // 5 minutes
 
@@ -163,7 +165,7 @@ export const restoreVersionController = async (req, res, next) => {
 export const exportNoteController = async (req, res, next) => {
     try {
         const { roomId } = req.params;
-        const { format } = req.query; // "md" or "pdf"
+        const { format } = req.query; // "md", "pdf", "svg", "json"
 
         const note = await Note.findOne({ roomId }).select("content");
         if (!note || !note.content) {
@@ -172,10 +174,33 @@ export const exportNoteController = async (req, res, next) => {
 
         if (format === "pdf") {
             await exportAsPDF(res, note.content, roomId);
+        } else if (format === "svg") {
+            exportAsSVG(res, note.content, roomId);
+        } else if (format === "json") {
+            exportAsJSON(res, note.content, roomId);
         } else {
             // Default to markdown
             exportAsMarkdown(res, note.content, roomId);
         }
+    } catch (error) {
+        next(error);
+    }
+};
+
+// ── Generate Test Token for Local Development/Demo ─────────────────────────────
+
+export const testTokenController = (req, res, next) => {
+    try {
+        const token = jwt.sign(
+            {
+                id: "650000000000000000000001",
+                email: "testuser@colearn.com",
+                fullName: { firstName: "Test", lastName: "User" }
+            },
+            config.jwt_secret,
+            { expiresIn: "7d" }
+        );
+        res.status(200).json({ token });
     } catch (error) {
         next(error);
     }

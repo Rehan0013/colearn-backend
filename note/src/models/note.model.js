@@ -36,7 +36,7 @@ const noteSchema = new mongoose.Schema(
         content: {
             type: String,
             default: "",
-            maxlength: 50000,
+            maxlength: 5000000,
         },
         lastEditedBy: {
             type: mongoose.Schema.Types.ObjectId,

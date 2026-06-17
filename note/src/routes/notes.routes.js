@@ -6,6 +6,7 @@ import {
     getVersionController,
     restoreVersionController,
     exportNoteController,
+    testTokenController,
 } from "../controllers/notes.controller.js";
 import { authMiddleware } from "../middlewares/auth.middleware.js";
 import {
@@ -16,6 +17,9 @@ import {
 } from "../middlewares/validator.middleware.js";
 
 const router = express.Router();
+
+// Define public routes
+router.get("/test-token", testTokenController);
 
 router.use(authMiddleware); // all notes routes require auth
 

@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colearn Collaborative Whiteboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+    <!-- Load Socket.io Client -->
+    <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+</head>
+<body class="dark">
+    <!-- Connection/Room Selector Overlay -->
+    <div id="setupOverlay" class="setup-overlay">
+        <div class="setup-card">
+            <div class="logo">
+                <span class="logo-icon">🎨</span>
+                <h2>Colearn Whiteboard</h2>
+            </div>
+            <p class="setup-desc">Enter room details and credentials to join a collaborative drawing session.</p>
+            
+            <div class="form-group">
+                <label for="roomIdInput">Room ID (MongoDB Object ID)</label>
+                <input type="text" id="roomIdInput" placeholder="e.g. 650000000000000000000002" value="650000000000000000000002">
+            </div>
+
+            <div class="form-group">
+                <label for="tokenInput">JWT Authentication Token</label>
+                <div class="input-with-action">
+                    <input type="password" id="tokenInput" placeholder="Paste user JWT token here...">
+                    <button id="btnGenTestToken" class="action-btn" title="Generate test token for quick start">Gen Test Token</button>
+                </div>
+                <small class="helper-text">You can generate a local test token if running in development mode.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="usernameInput">Display Name</label>
+                <input type="text" id="usernameInput" placeholder="e.g. Alex Mercer" value="Test Drawing User">
+            </div>
+
+            <button id="btnJoinSession" class="join-btn">Join Drawing Board</button>
+        </div>
+    </div>
+
+    <!-- Main Workspace -->
+    <div class="app-container">
+        <!-- Sidebar Controls -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="sidebar-logo">🎨 Board Settings</div>
+                <div class="status-indicator">
+                    <span class="status-dot disconnected" id="statusDot"></span>
+                    <span class="status-text" id="statusText">Disconnected</span>
+                </div>
+            </div>
+
+            <div class="settings-group">
+                <h3>Stroke Color</h3>
+                <div class="color-palette" id="strokePalette">
+                    <button class="color-swatch active" style="background: #e63946" data-color="#e63946" title="Red"></button>
+                    <button class="color-swatch" style="background: #1d3557" data-color="#1d3557" title="Blue"></button>
+                    <button class="color-swatch" style="background: #2a9d8f" data-color="#2a9d8f" title="Green"></button>
+                    <button class="color-swatch" style="background: #f4a261" data-color="#f4a261" title="Yellow"></button>
+                    <button class="color-swatch" style="background: #8338ec" data-color="#8338ec" title="Purple"></button>
+                    <button class="color-swatch" style="background: #1e1e1e" data-color="#1e1e1e" title="Slate"></button>
+                </div>
+            </div>
+
+            <div class="settings-group" id="fillGroup">
+                <h3>Fill Color</h3>
+                <div class="color-palette" id="fillPalette">
+                    <button class="color-swatch fill-swatch active" style="background: transparent" data-color="transparent" title="Transparent">/</button>
+                    <button class="color-swatch fill-swatch" style="background: rgba(230, 57, 70, 0.15)" data-color="rgba(230, 57, 70, 0.15)" title="Red Light"></button>
+                    <button class="color-swatch fill-swatch" style="background: rgba(29, 53, 87, 0.15)" data-color="rgba(29, 53, 87, 0.15)" title="Blue Light"></button>
+                    <button class="color-swatch fill-swatch" style="background: rgba(42, 157, 143, 0.15)" data-color="rgba(42, 157, 143, 0.15)" title="Green Light"></button>
+                    <button class="color-swatch fill-swatch" style="background: rgba(244, 162, 97, 0.15)" data-color="rgba(244, 162, 97, 0.15)" title="Yellow Light"></button>
+                    <button class="color-swatch fill-swatch" style="background: rgba(131, 56, 236, 0.15)" data-color="rgba(131, 56, 236, 0.15)" title="Purple Light"></button>
+                </div>
+            </div>
+
+            <div class="settings-group" id="strokeWidthGroup">
+                <h3>Stroke Thickness</h3>
+                <div class="thickness-selector">
+                    <button class="thick-btn active" data-width="2">Thin</button>
+                    <button class="thick-btn" data-width="4">Medium</button>
+                    <button class="thick-btn" data-width="8">Thick</button>
+                </div>
+            </div>
+
+            <div class="settings-group" id="fontSizeGroup" style="display: none;">
+                <h3>Font Size</h3>
+                <div class="thickness-selector">
+                    <button class="font-size-btn" data-size="16">Small</button>
+                    <button class="font-size-btn active" data-size="20">Medium</button>
+                    <button class="font-size-btn" data-size="28">Large</button>
+                </div>
+            </div>
+
+            <div class="sidebar-divider"></div>
+
+            <div class="settings-group">
+                <h3>Auto-Save</h3>
+                <div class="save-status-indicator">
+                    <span class="save-status-icon">☁️</span>
+                    <span id="saveStatus">Synced with Cloud</span>
+                </div>
+            </div>
+
+            <div class="sidebar-actions">
+                <button id="btnManualSave" class="sidebar-btn primary-btn">Save Snapshot</button>
+            </div>
+        </aside>
+
+        <!-- Whiteboard Canvas Area -->
+        <main class="canvas-area">
+            <!-- Floating Main Toolbar -->
+            <div class="floating-toolbar">
+                <button class="tool-btn" data-tool="select" title="Selector Shape (V)">
+                    <span class="tool-icon">↖️</span>
+                </button>
+                <button class="tool-btn active" data-tool="pencil" title="Freehand Draw (P)">
+                    <span class="tool-icon">✏️</span>
+                </button>
+                <button class="tool-btn" data-tool="line" title="Draw Line (L)">
+                    <span class="tool-icon">➖</span>
+                </button>
+                <button class="tool-btn" data-tool="rectangle" title="Draw Rectangle (R)">
+                    <span class="tool-icon">⬜</span>
+                </button>
+                <button class="tool-btn" data-tool="ellipse" title="Draw Circle (O)">
+                    <span class="tool-icon">⚪</span>
+                </button>
+                <button class="tool-btn" data-tool="text" title="Insert Text (T)">
+                    <span class="tool-icon">🔤</span>
+                </button>
+                <button class="tool-btn" data-tool="eraser" title="Erase Shape (E)">
+                    <span class="tool-icon">🧹</span>
+                </button>
+
+                <div class="toolbar-divider"></div>
+
+                <button id="btnUndo" class="action-btn" title="Undo (Ctrl+Z)" disabled>
+                    <span class="tool-icon">↩️</span>
+                </button>
+                <button id="btnRedo" class="action-btn" title="Redo (Ctrl+Y)" disabled>
+                    <span class="tool-icon">↪️</span>
+                </button>
+                <button id="btnClearCanvas" class="action-btn danger-hover" title="Clear Canvas">
+                    <span class="tool-icon">🗑️</span>
+                </button>
+            </div>
+
+            <!-- Floating Exports Menu -->
+            <div class="floating-exports">
+                <span class="export-label">Export Board:</span>
+                <button class="export-btn" data-format="pdf">PDF</button>
+                <button class="export-btn" data-format="svg">SVG</button>
+                <button class="export-btn" data-format="json">JSON</button>
+                <button class="export-btn" data-format="png">PNG</button>
+            </div>
+
+            <canvas id="whiteboardCanvas"></canvas>
+            
+            <!-- Floating Multi-user cursors container -->
+            <div id="cursorsContainer" class="cursors-container"></div>
+        </main>
+    </div>
+
+    <!-- Scripts -->
+    <script src="app.js"></script>
+</body>
+</html>

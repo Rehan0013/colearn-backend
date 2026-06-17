@@ -11,6 +11,7 @@ const app = express();
 app.use(cors({ origin: config.client_url, credentials: true }));
 app.use(express.json());
 app.use(cookieParser());
+app.use(express.static("public"));
 
 app.use("/api/notes", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPrefix: "note" }), notesRoutes);
 

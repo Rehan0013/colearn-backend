@@ -18,7 +18,7 @@ export const saveNoteValidation = [
     roomIdParam,
     body("content")
         .notEmpty().withMessage("Content is required")
-        .isLength({ max: 50000 }).withMessage("Content exceeds 50,000 character limit"),
+        .isLength({ max: 5000000 }).withMessage("Content exceeds 5,000,000 character limit"),
     body("label")
         .optional()
         .trim()
@@ -34,6 +34,6 @@ export const exportValidation = [
     roomIdParam,
     query("format")
         .optional()
-        .isIn(["md", "pdf"]).withMessage("Format must be 'md' or 'pdf'"),
+        .isIn(["md", "pdf", "svg", "json"]).withMessage("Format must be 'md', 'pdf', 'svg', or 'json'"),
     validate,
 ];

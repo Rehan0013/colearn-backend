@@ -44,8 +44,8 @@ export const registerNotesHandlers = (io, socket) => {
             if (!isPresent) return;
 
             if (typeof content !== "string") return;
-            if (content.length > 50000) {
-                return socket.emit("notes:error", { message: "Note exceeds maximum size (50,000 characters)" });
+            if (content.length > 5000000) {
+                return socket.emit("notes:error", { message: "Note exceeds maximum size (5,000,000 characters)" });
             }
 
             // Save to Redis immediately
