@@ -1,9 +1,38 @@
+import { z } from "zod";
 import { subscribeToQueue } from "./rabbit.js";
 import sendEmail from "../utils/email.util.js";
 
-function startListener() {
+const welcomeSchema = z.object({
+    email: z.string().email(),
+    fullName: z.object({
+        firstName: z.string(),
+        lastName: z.string()
+    })
+});
+
+const sendOtpSchema = z.object({
+    email: z.string().email(),
+    otp: z.union([z.string(), z.number()]).transform((val) => String(val)),
+    fullName: z.object({
+        firstName: z.string(),
+        lastName: z.string()
+    }),
+    type: z.enum(["registration", "forgot_password"])
+});
+
+const streakSchema = z.object({
+    email: z.string().email(),
+    fullName: z.object({
+        firstName: z.string().optional(),
+        lastName: z.string().optional()
+    }).nullable().optional(),
+    streak: z.union([z.string(), z.number()]).transform((val) => typeof val === "string" ? parseInt(val, 10) : val)
+});
+
+function startListener(): void {
     subscribeToQueue("user.welcome", async (msg) => {
-        const { email, fullName: { firstName, lastName } } = msg;
+        const parsed = welcomeSchema.parse(msg);
+        const { email, fullName: { firstName, lastName } } = parsed;
 
         const template = `
 <!DOCTYPE html>
@@ -85,9 +114,13 @@ function startListener() {
     });
 
     subscribeToQueue("send_otp", async (msg) => {
-        const { email, otp, fullName: { firstName, lastName }, type } = msg;
+        const parsed = sendOtpSchema.parse(msg);
+        const { email, otp, fullName: { firstName, lastName }, type } = parsed;
 
-        let subject, title, subtitle, bodyText;
+        let subject = "";
+        let title = "";
+        let subtitle = "";
+        let bodyText = "";
 
         if (type === "registration") {
             subject = "Verify your Colearn Registration";
@@ -184,7 +217,8 @@ function startListener() {
     });
 
     subscribeToQueue("streak.achieved", async (msg) => {
-        const { email, fullName, streak } = msg;
+        const parsed = streakSchema.parse(msg);
+        const { email, fullName, streak } = parsed;
         const firstName = fullName?.firstName || "there";
 
         const template = `

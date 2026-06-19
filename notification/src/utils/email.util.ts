@@ -13,7 +13,7 @@ const transporter = nodemailer.createTransport({
 });
 
 // Verify the connection configuration
-transporter.verify((error, success) => {
+transporter.verify((error) => {
     if (error) {
         console.error('Error connecting to email server:', error);
     } else {
@@ -22,7 +22,7 @@ transporter.verify((error, success) => {
 });
 
 // Function to send email
-const sendEmail = async (to, subject, text, html) => {
+const sendEmail = async (to: string, subject: string, text: string, html: string): Promise<void> => {
     try {
         const info = await transporter.sendMail({
             from: `"Co-Learn" <${config.EMAIL_USER}>`, // sender address

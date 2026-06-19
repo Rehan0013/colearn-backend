@@ -1,16 +1,17 @@
 import amqp from "amqplib";
 import config from "../config/_config.js";
 
-let channel, connection;
-let onConnectCallback = null;
+let channel: any;
+let connection: any;
+let onConnectCallback: (() => Promise<void> | void) | null = null;
 
-export async function connect(onConnect) {
+export async function connect(onConnect?: () => Promise<void> | void): Promise<void> {
     if (onConnect) onConnectCallback = onConnect;
     
     try {
         connection = await amqp.connect(config.RABBITMQ_URI);
 
-        connection.on("error", (err) => {
+        connection.on("error", (err: Error) => {
             console.error("Notification service: RabbitMQ connection error:", err.message);
             reconnect();
         });
@@ -22,7 +23,7 @@ export async function connect(onConnect) {
 
         channel = await connection.createChannel();
 
-        channel.on("error", (err) => {
+        channel.on("error", (err: Error) => {
             console.error("Notification service: RabbitMQ channel error:", err.message);
         });
 
@@ -35,20 +36,20 @@ export async function connect(onConnect) {
         if (onConnectCallback) {
             await onConnectCallback();
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error("Notification service: RabbitMQ connection failed:", error.message);
         reconnect();
     }
 }
 
-function reconnect() {
+function reconnect(): void {
     setTimeout(async () => {
         console.log("Notification service: Attempting to reconnect to RabbitMQ...");
         await connect();
     }, 5000); // 5 seconds delay
 }
 
-export async function publishToQueue(queueName, data) {
+export async function publishToQueue(queueName: string, data: any): Promise<void> {
     if (!channel) {
         console.error(`Notification service: Cannot publish to ${queueName}: No channel available`);
         return;
@@ -57,19 +58,19 @@ export async function publishToQueue(queueName, data) {
         await channel.assertQueue(queueName, { durable: true });
         channel.sendToQueue(queueName, Buffer.from(JSON.stringify(data)), { persistent: true });
         console.log("Notification service: Message sent to queue: ", queueName);
-    } catch (err) {
+    } catch (err: any) {
         console.error(`Notification service: Error sending message to ${queueName}:`, err.message);
     }
 }
 
-export async function subscribeToQueue(queueName, callback) {
+export async function subscribeToQueue(queueName: string, callback: (data: any) => Promise<void> | void): Promise<void> {
     if (!channel) {
         console.error(`Notification service: Cannot subscribe to ${queueName}: No channel available`);
         return;
     }
     try {
         await channel.assertQueue(queueName, { durable: true });
-        channel.consume(queueName, async (msg) => {
+        channel.consume(queueName, async (msg: any) => {
             if (msg !== null) {
                 try {
                     await callback(JSON.parse(msg.content.toString()));
@@ -82,7 +83,7 @@ export async function subscribeToQueue(queueName, callback) {
             }
         });
         console.log("Notification service: Registered listener for queue: ", queueName);
-    } catch (err) {
+    } catch (err: any) {
         console.error(`Notification service: Failed to subscribe to ${queueName}:`, err.message);
     }
 }
