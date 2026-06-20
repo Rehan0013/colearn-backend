@@ -1,14 +1,26 @@
-import mongoose from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
-const sessionSchema = new mongoose.Schema(
+export interface ISession extends Document {
+    userId: mongoose.Types.ObjectId;
+    roomId: mongoose.Types.ObjectId;
+    subject: string;
+    joinedAt: Date;
+    leftAt: Date | null;
+    durationMinutes: number;
+    isActive: boolean;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const sessionSchema = new Schema<ISession>(
     {
         userId: {
-            type: mongoose.Schema.Types.ObjectId,
+            type: Schema.Types.ObjectId,
             required: true,
             index: true,
         },
         roomId: {
-            type: mongoose.Schema.Types.ObjectId,
+            type: Schema.Types.ObjectId,
             required: true,
         },
         subject: {
@@ -42,10 +54,10 @@ sessionSchema.index({ userId: 1, isActive: 1 });
 
 sessionSchema.set("toJSON", {
     transform: (doc, ret) => {
-        delete ret.__v;
+        delete (ret as any).__v;
         return ret;
     },
 });
 
-const Session = mongoose.model("Session", sessionSchema);
+const Session = mongoose.model<ISession>("Session", sessionSchema);
 export default Session;

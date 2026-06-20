@@ -1,4 +1,4 @@
-import express from "express";
+import express, { Request, Response } from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
 import sessionRoutes from "./routes/session.routes.js";
@@ -14,11 +14,13 @@ app.use(cookieParser());
 
 app.use("/api/sessions", rateLimiter({ windowSeconds: 900, maxRequests: 100, keyPrefix: "session" }), sessionRoutes);
 
-app.get("/health", (req, res) => {
+app.get("/health", (req: Request, res: Response) => {
     res.status(200).json({ status: "ok", service: "session-service" });
 });
 
-app.use((req, res) => res.status(404).json({ message: "Route not found" }));
+app.use((req: Request, res: Response) => {
+    res.status(404).json({ message: "Route not found" });
+});
 app.use(errorHandler);
 
 export default app;

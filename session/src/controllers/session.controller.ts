@@ -1,3 +1,4 @@
+import { Request, Response, NextFunction } from "express";
 import mongoose from "mongoose";
 import Session from "../models/session.model.js";
 import UserStats from "../models/userStats.model.js";
@@ -7,10 +8,10 @@ import { publishToQueue } from "../broker/rabbit.js";
 
 // ── Manual end session ─────────────────────────────────────────────────────────
 
-export const endSessionController = async (req, res, next) => {
+export const endSessionController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
         const { roomId } = req.body;
-        const userId = req.user.id;
+        const userId = req.user!.id;
 
         await endSession({ userId, roomId });
 
@@ -25,19 +26,22 @@ export const endSessionController = async (req, res, next) => {
 
 // ── Get user stats ─────────────────────────────────────────────────────────────
 
-export const getStatsController = async (req, res, next) => {
+export const getStatsController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const userId = req.user.id;
+        const userId = req.user!.id;
         const cacheKey = `stats:${userId}`;
 
         const cached = await redis.get(cacheKey);
-        if (cached) return res.status(200).json(JSON.parse(cached));
+        if (cached) {
+            res.status(200).json(JSON.parse(cached));
+            return;
+        }
 
         const stats = await UserStats.findOne({ userId });
 
         if (stats) {
             // Lazy streak reset if user missed a day
-            await validateStreak(stats, req.user.email, req.user.fullName);
+            await validateStreak(stats, req.user!.email, req.user!.fullName);
         }
 
         // Calculate today's study minutes from sessions
@@ -77,15 +81,16 @@ export const getStatsController = async (req, res, next) => {
 
 // ── Get session history ────────────────────────────────────────────────────────
 
-export const getHistoryController = async (req, res, next) => {
+export const getHistoryController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const userId = req.user.id;
-        const { page = 1, limit = 20 } = req.query;
+        const userId = req.user!.id;
+        const page = Number(req.query.page || 1);
+        const limit = Number(req.query.limit || 20);
 
         const sessions = await Session.find({ userId, isActive: false })
             .sort({ joinedAt: -1 })
             .skip((page - 1) * limit)
-            .limit(Number(limit))
+            .limit(limit)
             .lean();
 
         const total = await Session.countDocuments({ userId, isActive: false });
@@ -95,7 +100,7 @@ export const getHistoryController = async (req, res, next) => {
             sessions,
             pagination: {
                 total,
-                page: Number(page),
+                page,
                 pages: Math.ceil(total / limit),
             },
         });
@@ -106,14 +111,17 @@ export const getHistoryController = async (req, res, next) => {
 
 // ── Get chart data ─────────────────────────────────────────────────────────────
 
-export const getChartDataController = async (req, res, next) => {
+export const getChartDataController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const userId = req.user.id;
-        const { range = "week" } = req.query; // "week" | "month"
+        const userId = req.user!.id;
+        const range = (req.query.range as string) || "week"; // "week" | "month"
         const cacheKey = `charts:${userId}:${range}`;
 
         const cached = await redis.get(cacheKey);
-        if (cached) return res.status(200).json(JSON.parse(cached));
+        if (cached) {
+            res.status(200).json(JSON.parse(cached));
+            return;
+        }
 
         const days = range === "month" ? 30 : 7;
         const startDate = new Date();
@@ -167,9 +175,9 @@ export const getChartDataController = async (req, res, next) => {
 
 // ── Active session check ───────────────────────────────────────────────────────
 
-export const getActiveSessionController = async (req, res, next) => {
+export const getActiveSessionController = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
     try {
-        const userId = req.user.id;
+        const userId = req.user!.id;
 
         const active = await Session.findOne({ userId, isActive: true })
             .sort({ joinedAt: -1 })
@@ -186,14 +194,22 @@ export const getActiveSessionController = async (req, res, next) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+interface ChartDataEntry {
+    date: string;
+    minutes: number;
+    sessions: number;
+}
+
 /**
  * Builds a full array of { date, minutes, sessions } for every day in range.
  * Days with no sessions get minutes: 0, sessions: 0.
  * This ensures Recharts always gets a complete dataset with no gaps.
  */
-const buildDateRange = (days, dbData) => {
-    const map = new Map(dbData.map((d) => [d._id, d]));
-    const result = [];
+const buildDateRange = (days: number, dbData: any[]): ChartDataEntry[] => {
+    const map = new Map<string, { minutes: number; sessions: number }>(
+        dbData.map((d) => [d._id, d])
+    );
+    const result: ChartDataEntry[] = [];
 
     for (let i = days - 1; i >= 0; i--) {
         const d = new Date();

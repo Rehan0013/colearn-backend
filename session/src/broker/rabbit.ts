@@ -1,10 +1,11 @@
 import amqp from "amqplib";
 import config from "../config/_config.js";
 
-let channel, connection;
-let onConnectCallback = null;
+let channel: any;
+let connection: any;
+let onConnectCallback: (() => Promise<void> | void) | null = null;
 
-export const connectRabbitMQ = async (onConnect) => {
+export const connectRabbitMQ = async (onConnect?: () => Promise<void> | void): Promise<void> => {
     if (onConnect && typeof onConnect === "function") {
         onConnectCallback = onConnect;
     }
@@ -12,7 +13,7 @@ export const connectRabbitMQ = async (onConnect) => {
     try {
         connection = await amqp.connect(config.rabbitmq_url);
 
-        connection.on("error", (err) => {
+        connection.on("error", (err: Error) => {
             console.error("Session service: RabbitMQ connection error:", err.message);
             reconnect();
         });
@@ -24,7 +25,7 @@ export const connectRabbitMQ = async (onConnect) => {
 
         channel = await connection.createChannel();
 
-        channel.on("error", (err) => {
+        channel.on("error", (err: Error) => {
             console.error("Session service: RabbitMQ channel error:", err.message);
         });
 
@@ -37,20 +38,20 @@ export const connectRabbitMQ = async (onConnect) => {
         if (onConnectCallback) {
             await onConnectCallback();
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error("Session service: RabbitMQ connection failed:", error.message);
         reconnect();
     }
 };
 
-const reconnect = () => {
+const reconnect = (): void => {
     setTimeout(async () => {
         console.log("Session service: Attempting to reconnect to RabbitMQ...");
         await connectRabbitMQ();
     }, 5000); // 5 seconds delay
 };
 
-export const publishToQueue = async (queue, data) => {
+export const publishToQueue = async (queue: string, data: any): Promise<void> => {
     if (!channel) {
         console.error(`Session service: Cannot publish to ${queue}: No channel available`);
         return;
@@ -59,9 +60,9 @@ export const publishToQueue = async (queue, data) => {
         await channel.assertQueue(queue, { durable: true });
         channel.sendToQueue(queue, Buffer.from(JSON.stringify(data)), { persistent: true });
         console.log("Session service: Message sent to queue: ", queue);
-    } catch (error) {
+    } catch (error: any) {
         console.error(`Session service: RabbitMQ publish to [${queue}] failed:`, error.message);
     }
 };
 
-export const getChannel = () => channel;
+export const getChannel = (): any => channel;

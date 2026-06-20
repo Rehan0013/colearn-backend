@@ -1,17 +1,28 @@
 import Session from "../models/session.model.js";
-import UserStats from "../models/userStats.model.js";
+import UserStats, { IUserStats } from "../models/userStats.model.js";
 import redis from "../db/redis.js";
 import { publishToQueue } from "../broker/rabbit.js";
 
-const SESSION_KEY = (userId, roomId) => `session:${userId}:${roomId}`;
+const SESSION_KEY = (userId: string, roomId: string) => `session:${userId}:${roomId}`;
 const MIN_SESSION_MINUTES = 1; // ignore sessions under 1 minute (accidental joins)
 
 // Streak milestones that trigger a notification
 const STREAK_MILESTONES = [3, 7, 14, 30, 60, 100];
 
+interface StartSessionParams {
+    userId: string;
+    roomId: string;
+    subject?: string;
+    userEmail: string;
+    userFullName: {
+        firstName: string;
+        lastName: string;
+    };
+}
+
 // ── Start Session ──────────────────────────────────────────────────────────────
 
-export const startSession = async ({ userId, roomId, subject, userEmail, userFullName }) => {
+export const startSession = async ({ userId, roomId, subject, userEmail, userFullName }: StartSessionParams): Promise<void> => {
     // Check if session already active for this user+room (double join guard)
     const existing = await redis.get(SESSION_KEY(userId, roomId));
     if (existing) return;
@@ -41,16 +52,21 @@ export const startSession = async ({ userId, roomId, subject, userEmail, userFul
     });
 };
 
+interface EndSessionParams {
+    userId: string;
+    roomId: string;
+}
+
 // ── End Session ────────────────────────────────────────────────────────────────
 
-export const endSession = async ({ userId, roomId }) => {
+export const endSession = async ({ userId, roomId }: EndSessionParams): Promise<void> => {
     const cached = await redis.get(SESSION_KEY(userId, roomId));
     if (!cached) return; // no active session found
 
     const { joinedAt, subject, userEmail, userFullName } = JSON.parse(cached);
     const leftAt = new Date();
     const durationMinutes = Math.round(
-        (leftAt - new Date(joinedAt)) / 1000 / 60
+        (leftAt.getTime() - new Date(joinedAt).getTime()) / 1000 / 60
     );
 
     // Clean up Redis
@@ -73,9 +89,19 @@ export const endSession = async ({ userId, roomId }) => {
     await updateUserStats({ userId, durationMinutes, userEmail, userFullName });
 };
 
+interface UpdateUserStatsParams {
+    userId: string;
+    durationMinutes: number;
+    userEmail: string;
+    userFullName: {
+        firstName: string;
+        lastName: string;
+    };
+}
+
 // ── Update UserStats + Streak ──────────────────────────────────────────────────
 
-const updateUserStats = async ({ userId, durationMinutes, userEmail, userFullName }) => {
+const updateUserStats = async ({ userId, durationMinutes, userEmail, userFullName }: UpdateUserStatsParams): Promise<void> => {
     const todayStr = getTodayString();
 
     let stats = await UserStats.findOne({ userId });
@@ -134,7 +160,7 @@ const updateUserStats = async ({ userId, durationMinutes, userEmail, userFullNam
 
 // ── Streak milestone publisher ────────────────────────────────────────────────
 
-const checkStreakMilestone = async (userId, streak, email, fullName) => {
+const checkStreakMilestone = async (userId: string, streak: number, email: string, fullName: { firstName: string; lastName: string }): Promise<void> => {
     if (STREAK_MILESTONES.includes(streak)) {
         publishToQueue("streak.achieved", { userId, streak, email, fullName }).catch(() => { });
     }
@@ -144,7 +170,7 @@ const checkStreakMilestone = async (userId, streak, email, fullName) => {
  * Validates and resets a broken streak if the user missed a day.
  * Triggered on stats fetch to ensure the displayed streak is always accurate.
  */
-export const validateStreak = async (stats, userEmail, userFullName) => {
+export const validateStreak = async (stats: IUserStats, userEmail: string, userFullName: { firstName: string; lastName: string }): Promise<void> => {
     const todayStr = getTodayString();
     const yesterday = getYesterdayString();
     const lastDate = stats.lastStudyDate;
@@ -170,9 +196,9 @@ export const validateStreak = async (stats, userEmail, userFullName) => {
 
 // ── Date helpers ──────────────────────────────────────────────────────────────
 
-const getTodayString = () => new Date().toISOString().split("T")[0]; // "2025-03-27"
+const getTodayString = (): string => new Date().toISOString().split("T")[0]; // "2025-03-27"
 
-const getYesterdayString = () => {
+const getYesterdayString = (): string => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
     return d.toISOString().split("T")[0];

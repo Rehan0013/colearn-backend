@@ -1,9 +1,19 @@
-import mongoose from "mongoose";
+import mongoose, { Schema, Document } from "mongoose";
 
-const userStatsSchema = new mongoose.Schema(
+export interface IUserStats extends Document {
+    userId: mongoose.Types.ObjectId;
+    totalStudyMinutes: number;
+    streak: number;
+    lastStudyDate: string | null;
+    longestStreak: number;
+    createdAt: Date;
+    updatedAt: Date;
+}
+
+const userStatsSchema = new Schema<IUserStats>(
     {
         userId: {
-            type: mongoose.Schema.Types.ObjectId,
+            type: Schema.Types.ObjectId,
             required: true,
             unique: true,
             index: true,
@@ -31,10 +41,10 @@ const userStatsSchema = new mongoose.Schema(
 
 userStatsSchema.set("toJSON", {
     transform: (doc, ret) => {
-        delete ret.__v;
+        delete (ret as any).__v;
         return ret;
     },
 });
 
-const UserStats = mongoose.model("UserStats", userStatsSchema);
+const UserStats = mongoose.model<IUserStats>("UserStats", userStatsSchema);
 export default UserStats;
