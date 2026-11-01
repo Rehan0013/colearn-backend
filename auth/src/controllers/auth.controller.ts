@@ -458,3 +458,25 @@ export const checkEmailController = async (req: Request, res: Response, next: Ne
         next(error);
     }
 };
+
+export const getUserStatsbyid = async (req: Request, res: Response, next: NextFunction): Promise<void | Response> => {
+    try {
+        const userId = req.params.id;
+        const user = await userModel.findById(userId);
+        if (!user) {
+            return res.status(404).json({ message: "User not found" });
+        }
+        res.status(200).json({
+            message: "User stats fetched successfully",
+            user: {
+                _id: user._id,
+                fullName: user.fullName,
+                avatar: user.avatar,
+                totalStudyMinutes: user.totalStudyMinutes,
+                streak: user.streak,
+            },
+        });
+    } catch (error) {
+        next(error);
+    }
+};
