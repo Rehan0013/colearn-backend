@@ -3,27 +3,28 @@ import passport from "passport";
 import multer from "multer";
 
 import {
-    registerController,
-    loginController,
-    googleAuthCallbackController,
-    logoutController,
-    logoutAllController,
-    refreshTokenController,
-    verifyRegistrationController,
-    forgotPasswordController,
-    resetPasswordController,
-    getCurrentUserController,
-    updateProfileController,
-    checkEmailController,
+  registerController,
+  loginController,
+  googleAuthCallbackController,
+  logoutController,
+  logoutAllController,
+  refreshTokenController,
+  verifyRegistrationController,
+  forgotPasswordController,
+  resetPasswordController,
+  getCurrentUserController,
+  updateProfileController,
+  checkEmailController,
+  getUserStatsbyid
 } from "../controllers/auth.controller.js";
 
 import {
-    registerValidation,
-    loginValidation,
-    verifyRegistrationValidation,
-    forgotPasswordValidation,
-    resetPasswordValidation,
-    updateProfileValidation,
+  registerValidation,
+  loginValidation,
+  verifyRegistrationValidation,
+  forgotPasswordValidation,
+  resetPasswordValidation,
+  updateProfileValidation,
 } from "../middlewares/validator.middleware.js";
 
 import { authMiddleware } from "../middlewares/auth.middleware.js";
@@ -38,9 +39,9 @@ const upload = multer({
 const router = express.Router();
 
 const authLimiter = rateLimiter({
-    windowSeconds: 900, // 15 minutes
-    maxRequests: 15,    // Max 15 attempts
-    keyPrefix: "auth_sensitive"
+  windowSeconds: 900, // 15 minutes
+  maxRequests: 15,    // Max 15 attempts
+  keyPrefix: "auth_sensitive"
 });
 
 // ─── Email / Password Auth ─────────────────────────────────────────────────────
@@ -61,12 +62,13 @@ router.post("/reset-password", authLimiter, resetPasswordValidation, resetPasswo
 router.get("/current-user", authMiddleware, getCurrentUserController);
 router.patch("/update-profile", authMiddleware, upload.single("avatar"), updateProfileValidation, updateProfileController);
 router.get("/check-email", checkEmailController);
+router.get("/user-stats/:id", authLimiter, getUserStatsbyid);
 
 // ─── Google OAuth ──────────────────────────────────────────────────────────────
 router.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
 router.get("/google/callback",
-    passport.authenticate("google", { session: false, failureRedirect: `${process.env.CLIENT_URL}/login?error=google_failed` }),
-    googleAuthCallbackController
+  passport.authenticate("google", { session: false, failureRedirect: `${process.env.CLIENT_URL}/login?error=google_failed` }),
+  googleAuthCallbackController
 );
 
 export default router;
